@@ -53,7 +53,6 @@ jobs:
         - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.9"  , python_architecture: x64 , venv: "" }
         - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.8"  , python_architecture: x64 , venv: "" }
         - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.7"  , python_architecture: x64 , venv: "" }
-        - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.6"  , python_architecture: x64 , venv: "" }
 
         # Ruby-debug with the latest Python 3
         - { os: ubuntu-22.04   , ruby: debug , python: "3.x"  , python_architecture: x64 , venv: "" }
