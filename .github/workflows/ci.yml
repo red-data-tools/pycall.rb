@@ -22,7 +22,7 @@ jobs:
       matrix:
         os:
         - ubuntu-latest
-        - ubuntu-20.04
+        - ubuntu-22.04
         - macos-latest
         ruby:
         - "3.4"
@@ -39,27 +39,27 @@ jobs:
         - ""
         include:
         # Python 3.11 with the latest Ruby
-        - { os: ubuntu-20.04   , ruby: 3.3   , python: "3.11" , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 3.3   , python: "3.11" , python_architecture: x64 , venv: "" }
 
         # Old ruby and the latest Python 3
-        - { os: ubuntu-20.04   , ruby: 2.6   , python: "3.x"  , python_architecture: x64 , venv: "" }
-        - { os: ubuntu-20.04   , ruby: 2.5   , python: "3.x"  , python_architecture: x64 , venv: "" }
-        - { os: ubuntu-20.04   , ruby: 2.4   , python: "3.x"  , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.6   , python: "3.x"  , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.5   , python: "3.x"  , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.4   , python: "3.x"  , python_architecture: x64 , venv: "" }
 
         # Ruby 2.7 with Each Python 3.x
-        - { os: ubuntu-20.04   , ruby: 2.7   , python: "3.12" , python_architecture: x64 , venv: "" }
-        - { os: ubuntu-20.04   , ruby: 2.7   , python: "3.11" , python_architecture: x64 , venv: "" }
-        - { os: ubuntu-20.04   , ruby: 2.7   , python: "3.10" , python_architecture: x64 , venv: "" }
-        - { os: ubuntu-20.04   , ruby: 2.7   , python: "3.9"  , python_architecture: x64 , venv: "" }
-        - { os: ubuntu-20.04   , ruby: 2.7   , python: "3.8"  , python_architecture: x64 , venv: "" }
-        - { os: ubuntu-20.04   , ruby: 2.7   , python: "3.7"  , python_architecture: x64 , venv: "" }
-        - { os: ubuntu-20.04   , ruby: 2.7   , python: "3.6"  , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.12" , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.11" , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.10" , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.9"  , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.8"  , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.7"  , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: 2.7   , python: "3.6"  , python_architecture: x64 , venv: "" }
 
         # Ruby-debug with the latest Python 3
-        - { os: ubuntu-20.04   , ruby: debug , python: "3.x"  , python_architecture: x64 , venv: "" }
+        - { os: ubuntu-22.04   , ruby: debug , python: "3.x"  , python_architecture: x64 , venv: "" }
 
         # The latest stable Ruby with the latest Python 3 with venv
-        - { os: ubuntu-20.04   , ruby: "3.3" , python: "3.x"  , python_architecture: x64 , venv: "venv:"  }
+        - { os: ubuntu-22.04   , ruby: "3.3" , python: "3.x"  , python_architecture: x64 , venv: "venv:"  }
 
         # macOS with venv
         - { os: macos-latest   , ruby: "3.3" , python: "3.x"  , python_architecture: x64 , venv: "venv:"  }
@@ -110,7 +110,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-        - ubuntu-20.04
+        - ubuntu-22.04
         #- macos-latest
         ruby:
         - "3.1"
