@@ -161,10 +161,7 @@ module PyCall
           list = PyCall::List.new([*1..10])
           expect(list[(1..-1).step(2)]).to eq(PyCall::List.new([2, 4, 6, 8, 10]))
           expect(list[(1..-2).step(2)]).to eq(PyCall::List.new([2, 4, 6, 8]))
-          # In Ruby 3.4+, step for non-numeric beginless ranges raises ArgumentError
-          if Gem::Version.new(RUBY_VERSION) < Gem::Version.new('3.4.0')
-            expect(list[(nil..nil).step(-1)]).to eq(PyCall::List.new([*1..10].reverse))
-          end
+          expect(list[(nil..nil).step(-1)]).to eq(PyCall::List.new([*1..10].reverse))
           expect(list[(-1..0).step(-1)]).to eq(PyCall::List.new([*1..10].reverse))
           expect(list[(-1...0).step(-1)]).to eq(PyCall::List.new([*2..10].reverse))
           expect(list[(-2..2).step(-2)]).to eq(PyCall::List.new([9, 7, 5, 3]))
