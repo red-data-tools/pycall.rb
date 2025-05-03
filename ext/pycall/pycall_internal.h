@@ -71,7 +71,7 @@ typedef intptr_t Py_intptr_t;
 #ifdef HAVE_SSIZE_T
 typedef ssize_t Py_ssize_t;
 #elif SIZEOF_SIZE_T == SIZEOF_VOIDP
-typedef Py_intptr_tr Py_ssize_t;
+typedef Py_intptr_t Py_ssize_t;
 #elif SIZEOF_SIZE_T == SIZEOF_INT
 typedef int Py_ssize_t;
 #elif SIZEOF_SIZE_T == SIZEOF_LONG
