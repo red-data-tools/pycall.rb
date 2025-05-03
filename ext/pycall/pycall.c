@@ -29,7 +29,6 @@ static int python_major_version;
 static int python_has_stackless_extension;
 static PyObject *python_builtins_module;
 static VALUE python_type_mapping;
-static VALUE python_type_mapping;
 static ID id_python_type_mapping;
 
 int
