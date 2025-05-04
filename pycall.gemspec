@@ -17,7 +17,7 @@ Gem::Specification.new do |spec|
 
   spec.summary       = %q{pycall}
   spec.description   = %q{pycall}
-  spec.homepage      = "https://github.com/mrkn/pycall"
+  spec.homepage      = "https://github.com/red-data-tools/pycall.rb"
   spec.license       = "MIT"
 
   spec.files         = `git ls-files -z`.split("\x0").reject do |f|
