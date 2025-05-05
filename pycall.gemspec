@@ -22,8 +22,7 @@ Gem::Specification.new do |spec|
 
   spec.files         = `git ls-files -z`.split("\x0").reject do |f|
     case f
-    when %r{^Guardfile},  # NOTE: Skip symlink for Windows
-         %r{^ext/pycall/spec_helper/},
+    when %r{^ext/pycall/spec_helper/},
          %r{^(test|spec|features)/}
       true
     else
