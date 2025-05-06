@@ -38,7 +38,7 @@ jobs:
         #- { ruby: mswin , python: 3.x , python_architecture: x64 }
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 1
 
@@ -82,7 +82,7 @@ jobs:
         shell: pwsh
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 1
 
