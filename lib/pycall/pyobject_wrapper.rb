@@ -33,8 +33,6 @@ module PyCall
     }.freeze
 
     def method_missing(name, *args)
-      name_str = name.to_s if name.kind_of?(Symbol)
-      name_str.chop! if name_str.end_with?('=')
       case name
       when *OPERATOR_METHOD_NAMES.keys
         op_name = OPERATOR_METHOD_NAMES[name]
@@ -44,7 +42,8 @@ module PyCall
           return self.__send__(name, *args)
         end
       else
-        if LibPython::Helpers.hasattr?(__pyptr__, name_str)
+        name_without_last_equal = name.to_s.chomp('=')
+        if LibPython::Helpers.hasattr?(__pyptr__, name_without_last_equal)
           LibPython::Helpers.define_wrapper_method(self, name)
           return self.__send__(name, *args)
         end
