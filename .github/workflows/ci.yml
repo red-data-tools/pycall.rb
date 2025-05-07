@@ -121,7 +121,7 @@ jobs:
       with:
         fetch-depth: 1
 
-    - uses: conda-incubator/setup-miniconda@v2
+    - uses: conda-incubator/setup-miniconda@v3
       with:
         activate-environment: test
         python-version: ${{ matrix.python }}
