@@ -162,7 +162,7 @@ module PyCall
           expect(list[(1..-1).step(2)]).to eq(PyCall::List.new([2, 4, 6, 8, 10]))
           expect(list[(1..-2).step(2)]).to eq(PyCall::List.new([2, 4, 6, 8]))
           expect(list[(-1..0).step(-1)]).to eq(PyCall::List.new([*1..10].reverse))
-          expect(list[(-1..0).step(-1)]).to eq(PyCall::List.new([*1..10].reverse))
+          expect(list[(nil..nil).step(-1)]).to eq(PyCall::List.new([*1..10].reverse))
           expect(list[(-1...0).step(-1)]).to eq(PyCall::List.new([*2..10].reverse))
           expect(list[(-2..2).step(-2)]).to eq(PyCall::List.new([9, 7, 5, 3]))
           expect(list[(-2...2).step(-2)]).to eq(PyCall::List.new([9, 7, 5]))
