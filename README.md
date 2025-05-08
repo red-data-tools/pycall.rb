@@ -1,6 +1,6 @@
 <a name="logo"/>
 <div align="center">
-<img src="./images/pycallrb_logo_200.png" alt="pycall.rb logo" width="200" height="200"></img>
+<img src="./images/pycallrb_logo_200.png" alt="pycall.rb logo" width="200" height="200" />
 </div>
 
 # PyCall: Calling Python functions from the Ruby language
