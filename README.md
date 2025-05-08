@@ -125,17 +125,11 @@ DEBUG(find_libpython) dlopen("/opt/brew/opt/python/Frameworks/Python.framework/V
 
 ## Special notes for specific libraries
 
-### matplotlib
+For the following libraries, use dedicated Ruby gems instead of direct PyCall imports:
 
-Use [mrkn/matplotlib.rb](https://github.com/mrkn/matplotlib.rb) instead of just importing it by `PyCall.import_module("matplotlib")`.
-
-### numpy
-
-Use [mrkn/numpy.rb](https://github.com/mrkn/numpy.rb) instead of just importing it by `PyCall.import_module("numpy")`.
-
-### pandas
-
-Use [mrkn/pandas.rb](https://github.com/mrkn/pandas.rb) instead of just importing it by `PyCall.import_module("pandas")`.
+- **matplotlib**: Use [mrkn/matplotlib.rb](https://github.com/mrkn/matplotlib.rb)
+- **numpy**: Use [mrkn/numpy.rb](https://github.com/mrkn/numpy.rb)
+- **pandas**: Use [mrkn/pandas.rb](https://github.com/mrkn/pandas.rb)
 
 ## PyCall object system
 
@@ -227,8 +221,8 @@ https://github.com/red-data-tools/pycall.rb.
 
 ## Acknowledgement
 
-[PyCall.jl](https://github.com/JuliaPy/PyCall.jl) is referred too many times
-to implement this library.
+[PyCall.jl](https://github.com/JuliaPy/PyCall.jl) is referred to many times
+in the implementation of this library.
 
 ## License
 
