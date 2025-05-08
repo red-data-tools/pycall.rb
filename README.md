@@ -12,13 +12,10 @@ with Python from the Ruby language. You can import arbitrary Python modules
 into Ruby modules, call Python functions with automatic type conversion from
 Ruby to Python.
 
-## Supported Ruby versions
+## Requirements
 
-pycall.rb supports Ruby version 2.4 or higher.
-
-## Supported Python versions
-
-pycall.rb supports Python version 3.7 or higher.
+- Ruby 2.4 or later
+- Python 3.7 or later (with shared library)
 
 ## PyCall does not support multi-threaded use officially
 
@@ -145,7 +142,7 @@ other classes that are extended by `PyCall::PyObjectWrapper` module.
 
 `PyCall::PyObjectWrapper` is a mix-in module for objects that wraps Python
 objects. A wrapper object should have `PyCall::PyPtr` object in its instance
-variable `@__pyptr__`. `PyCall::PyObjectWrapper` assumes the existance of
+variable `@__pyptr__`. `PyCall::PyObjectWrapper` assumes the existence of
 `@__pyptr__`, and provides general translation mechanisms between Ruby object
 system and Python object system. For example, `PyCall::PyObjectWrapper`
 translates Ruby's coerce system into Python's swapped operation protocol.
@@ -197,7 +194,7 @@ important for the Python environment to be engaged first, as PyCall will need to
 be able to find it when Ruby-based processes start.
 
 Once you have set up your buildpacks, and have committed both `requirements.txt` and
-`.python-version` files to git, deploy your Heroku application as your normally would.
+`.python-version` files to git, deploy your Heroku application as you normally would.
 The Python bootstrapping process will appear in the log first, followed by the Ruby
 and so on. PyCall should now be able to successfully call Python functions from
 within the Heroku environment.
