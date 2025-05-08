@@ -17,15 +17,6 @@ Ruby to Python.
 - Ruby 2.4 or later
 - Python 3.7 or later (with shared library)
 
-## Note for pyenv users
-
-pycall.rb requires Python's shared library (e.g. `libpython3.7m.so`).
-pyenv does not build the shared library in default, so you need to specify `--enable-shared` option at the installation like below:
-
-```
-$ env PYTHON_CONFIGURE_OPTS='--enable-shared' pyenv install 3.7.2
-```
-
 ## Installation
 
 Add this line to your application's Gemfile:
@@ -41,6 +32,15 @@ And then execute:
 Or install it yourself as:
 
     $ gem install --pre pycall
+
+### Note for pyenv users
+
+pycall.rb requires Python's shared library (e.g. `libpython3.7m.so`).
+pyenv does not build the shared library in default, so you need to specify `--enable-shared` option at the installation like below:
+
+```
+$ env PYTHON_CONFIGURE_OPTS='--enable-shared' pyenv install 3.7.2
+```
 
 ## Usage
 
