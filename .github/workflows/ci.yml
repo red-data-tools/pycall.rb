@@ -7,10 +7,6 @@ on:
     - "check/ci/**"
     - "check/unix/**"
   pull_request:
-    types:
-    - opened
-    - synchronize
-    - reopened
 
 jobs:
   test:
