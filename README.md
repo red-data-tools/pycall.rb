@@ -47,9 +47,11 @@ $ env PYTHON_CONFIGURE_OPTS='--enable-shared' pyenv install 3.7.2
 Here is a simple example to call Python's `math.sin` function and compare it to
 the `Math.sin` in Ruby:
 
-    require 'pycall'
-    math = PyCall.import_module("math")
-    math.sin(math.pi / 4) - Math.sin(Math::PI / 4)   # => 0.0
+```ruby
+require 'pycall'
+math = PyCall.import_module("math")
+math.sin(math.pi / 4) - Math.sin(Math::PI / 4)   # => 0.0
+```
 
 Type conversions from Ruby to Python are automatically performed for numeric,
 boolean, string, arrays, and hashes.
