@@ -17,10 +17,6 @@ Ruby to Python.
 - Ruby 2.4 or later
 - Python 3.7 or later (with shared library)
 
-## PyCall does not support multi-threaded use officially
-
-CPython's C-API has GIL acquiring/releasing functions such as `PyGILState_Ensure` and `PyGILState_Release`. Programmers can call CPython's C-APIs from outside of Python threads if they manage GIL's state by these functions. However, we do not want to officially support the multi-threaded use of PyCall because creating the feature enabling stable multi-threaded use in any situation is too difficult. We want to avoid incurring the costs to support such use cases.
-
 ## Note for pyenv users
 
 pycall.rb requires Python's shared library (e.g. `libpython3.7m.so`).
@@ -198,6 +194,12 @@ Once you have set up your buildpacks, and have committed both `requirements.txt`
 The Python bootstrapping process will appear in the log first, followed by the Ruby
 and so on. PyCall should now be able to successfully call Python functions from
 within the Heroku environment.
+
+## Limitations
+
+### PyCall does not support multi-threaded use officially
+
+CPython's C-API has GIL acquiring/releasing functions such as `PyGILState_Ensure` and `PyGILState_Release`. Programmers can call CPython's C-APIs from outside of Python threads if they manage GIL's state by these functions. However, we do not want to officially support the multi-threaded use of PyCall because creating the feature enabling stable multi-threaded use in any situation is too difficult. We want to avoid incurring the costs to support such use cases.
 
 ## Development
 
