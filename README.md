@@ -66,7 +66,20 @@ boolean, string, arrays, and hashes.
 
 Pycall.rb maps the callable attribute of an object to the instance method of the corresponding wrapper object. So, we can write a Python expression `obj.meth(x, y, z=1)` as `obj.meth(x, y, z: 1)` in Ruby. This mapping allows us to call these attributes naturally as Ruby's manner.
 
-But, unfortunately, this mapping prohibits us to get the callable attributes. We need to write `PyCall.getattr(obj, :meth)` in Ruby to get `obj.meth` object while we can write `obj.meth` in Python.
+In Python, you can get a method object (callable attribute) or call it:
+
+```python
+obj.meth      # get the method object (callable attribute)
+obj.meth()    # call the method
+```
+
+In PyCall.rb, `obj.meth` always calls the method (equivalent to `obj.meth()` in Python).
+To get the method object itself (not call it), use `PyCall.getattr`:
+
+```ruby
+obj.meth                    # calls Python's obj.meth()
+PyCall.getattr(obj, :meth)  # gets Python's obj.meth (the method object)
+```
 
 ### Specifying the Python version
 
