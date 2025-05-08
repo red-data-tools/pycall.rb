@@ -3,9 +3,8 @@ name: Windows
 on:
   push:
     branches:
-    - master
-    - "check/ci/**"
-    - "check/windows/**"
+    - "**"
+    - '!dependabot/**'
   pull_request:
     types:
     - opened

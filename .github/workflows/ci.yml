@@ -3,9 +3,8 @@ name: CI
 on:
   push:
     branches:
-    - master
-    - "check/ci/**"
-    - "check/unix/**"
+    - "**"
+    - '!dependabot/**'
   pull_request:
     types:
     - opened
