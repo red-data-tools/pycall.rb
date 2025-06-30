@@ -183,7 +183,7 @@ RUN bundle exec iruby register
 
 # Deploy matplotlib's examples
 RUN mkdir -p /tmp \
-	&& curl -fsSL https://github.com/mrkn/matplotlib.rb/archive/master.tar.gz | tar -xzf - -C /tmp \
+	&& curl -fsSL https://github.com/red-data-tools/matplotlib.rb/archive/master.tar.gz | tar -xzf - -C /tmp \
 	&& mv /tmp/matplotlib.rb-master/examples /notebooks/examples/matplotlib \
         && rm -rf /tmp/matplotlib.rb-master
 
