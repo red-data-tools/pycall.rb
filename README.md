@@ -131,15 +131,15 @@ DEBUG(find_libpython) dlopen("/opt/brew/opt/python/Frameworks/Python.framework/V
 
 ### matplotlib
 
-Use [mrkn/matplotlib.rb](https://github.com/mrkn/matplotlib.rb) instead of just importing it by `PyCall.import_module("matplotlib")`.
+Use [red-data-tools/matplotlib.rb](https://github.com/red-data-tools/matplotlib.rb) instead of just importing it by `PyCall.import_module("matplotlib")`.
 
 ### numpy
 
-Use [mrkn/numpy.rb](https://github.com/mrkn/numpy.rb) instead of just importing it by `PyCall.import_module("numpy")`.
+Use [red-data-tools/numpy.rb](https://github.com/red-data-tools/numpy.rb) instead of just importing it by `PyCall.import_module("numpy")`.
 
 ### pandas
 
-Use [mrkn/pandas.rb](https://github.com/mrkn/pandas.rb) instead of just importing it by `PyCall.import_module("pandas")`.
+Use [red-data-tools/pandas.rb](https://github.com/red-data-tools/pandas.rb) instead of just importing it by `PyCall.import_module("pandas")`.
 
 ## PyCall object system
 
