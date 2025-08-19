@@ -116,7 +116,7 @@ module PyCall
     rescue PyError => err
       raise err unless ctx.__exit__(err.type, err.value, err.traceback)
     rescue Exception => err
-      # TODO: support telling what exception has been catched
+      # TODO: support telling what exception has been caught
       raise err unless ctx.__exit__(err.class, err, err.backtrace_locations)
     else
       ctx.__exit__(nil, nil, nil)
