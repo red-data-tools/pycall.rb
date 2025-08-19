@@ -88,8 +88,8 @@ ENV LANG C.UTF-8
 
 # runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-		tcl \
-		tk \
+		tcl=8.6.* \
+		tk=8.6.* \
 	&& rm -rf /var/lib/apt/lists/*
 
 ENV GPG_KEY 0D96DF4D4110E5C43FBFB17F2D347EA6AA65421D
@@ -159,7 +159,7 @@ RUN cd /usr/local/bin \
 ###############################################################
 
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends libczmq-dev
+	&& apt-get install -y --no-install-recommends libczmq-dev=3.0.*
 
 RUN pip3 install jupyter
 RUN pip3 install numpy
