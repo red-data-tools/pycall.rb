@@ -231,7 +231,7 @@ module PyCall
         else
           name, basic_size = *args
           new.tap do |t|
-            # NOTE: Disable autorelease for avoiding SEGV occurrance in Python's GC collect function
+            # NOTE: Disable autorelease for avoiding SEGV occurrence in Python's GC collect function
             #       at which the __new__ method object of this type object is freed.
             t.pointer.autorelease = false
 

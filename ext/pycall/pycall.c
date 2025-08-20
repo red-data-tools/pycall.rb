@@ -1190,10 +1190,10 @@ pycall_convert_index(VALUE index)
     }
   }
   else if (rb_obj_is_kind_of(index, rb_cRange)) {
-    pyobj = pycall_pyslice_from_ruby(index); /* New refrence */
+    pyobj = pycall_pyslice_from_ruby(index); /* New reference */
   }
   else if (pycall_obj_is_step_range(index)) {
-    pyobj = pycall_pyslice_from_ruby(index); /* New refrence */
+    pyobj = pycall_pyslice_from_ruby(index); /* New reference */
   }
   else {
     pyobj = pycall_pyobject_from_ruby(index); /* New reference */
@@ -1527,7 +1527,7 @@ pycall_pyobject_to_ruby(PyObject *pyobj)
   Py_API(Py_IncRef)((PyObject *)pyobj->ob_type);
   cls = pycall_python_type_mapping_get_mapped_class(pycall_pytypeptr_new((PyObject *)pyobj->ob_type));
   if (NIL_P(cls)) {
-    rb_warning("Currentry do not support to convert %s to Ruby object", Py_TYPE(pyobj)->tp_name);
+    rb_warning("Currently do not support to convert %s to Ruby object", Py_TYPE(pyobj)->tp_name);
     return pycall_pyobject_wrapper_object_new(rb_cObject, pyobj);
   }
 
@@ -1662,7 +1662,7 @@ pycall_pylong_to_ruby(PyObject *pyobj)
   }
 #endif
 
-  rb_warning("Currentry do not support to convert multi-precision PyLong number to Ruby object");
+  rb_warning("Currently do not support to convert multi-precision PyLong number to Ruby object");
 
   return Qnil;
 }
