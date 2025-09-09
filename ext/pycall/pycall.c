@@ -680,6 +680,15 @@ pycall_libpython_api_PyList_GetItem(VALUE mod, VALUE pyptr, VALUE idx)
   return pycall_pyptr_new(pyobj_item);
 }
 
+static VALUE
+pycall_libpython_api_Py_FinalizeEx(VALUE mod)
+{
+  assert(Py_API(Py_IsInitialized()));
+
+  return Py_API(Py_FinalizeEx)();
+}
+
+
 /* ==== PyCall::Helpers ==== */
 
 static VALUE
@@ -2371,6 +2380,7 @@ Init_pycall(void)
   rb_define_module_function(mAPI, "PyObject_Dir", pycall_libpython_api_PyObject_Dir, 1);
   rb_define_module_function(mAPI, "PyList_Size", pycall_libpython_api_PyList_Size, 1);
   rb_define_module_function(mAPI, "PyList_GetItem", pycall_libpython_api_PyList_GetItem, 2);
+  rb_define_module_function(mAPI, "Py_FinalizeEx", pycall_libpython_api_Py_FinalizeEx, 0);
 
   /* PyCall::LibPython::Helpers */
 
