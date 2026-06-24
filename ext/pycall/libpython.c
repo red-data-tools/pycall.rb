@@ -89,6 +89,7 @@ pycall_init_libpython_api_table(VALUE libpython_handle)
   INIT_API_TABLE_ENTRY(PyUnicode_Type, required);
 
   INIT_API_TABLE_ENTRY(Py_InitializeEx, required);
+  INIT_API_TABLE_ENTRY(Py_FinalizeEx, required);
   INIT_API_TABLE_ENTRY(Py_IsInitialized, required);
   INIT_API_TABLE_ENTRY(Py_GetVersion, required);
 
