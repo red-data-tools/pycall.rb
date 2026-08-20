@@ -121,6 +121,58 @@ pycall_m_without_gvl(VALUE mod)
 
 /* ==== PyCall::PyPtr ==== */
 
+struct pending_decref_list {
+  rb_nativethread_lock_t lock;
+  PyObject **pyptrs;
+  size_t count;
+  size_t capacity;
+};
+
+static struct pending_decref_list pending_decrefs;
+
+static void
+pycall_pending_decref_add(PyObject *pyobj)
+{
+  rb_nativethread_lock_lock(&pending_decrefs.lock);
+  if (pending_decrefs.count == pending_decrefs.capacity) {
+    size_t new_capacity = pending_decrefs.capacity ? 2 * pending_decrefs.capacity : 64;
+    /* Not ruby_xrealloc: this function runs during GC, where xmalloc/xrealloc
+     * are prohibited (rb_bug "Cannot realloc during GC" since Ruby 3.3). */
+    PyObject **new_pyptrs = realloc(pending_decrefs.pyptrs, new_capacity * sizeof(PyObject *));
+    if (new_pyptrs == NULL) {
+      /* Leaking the object is preferable to blocking or crashing inside GC */
+      rb_nativethread_lock_unlock(&pending_decrefs.lock);
+      return;
+    }
+    pending_decrefs.pyptrs = new_pyptrs;
+    pending_decrefs.capacity = new_capacity;
+  }
+  pending_decrefs.pyptrs[pending_decrefs.count++] = pyobj;
+  rb_nativethread_lock_unlock(&pending_decrefs.lock);
+}
+
+static void
+pycall_drain_pending_decrefs(void)
+{
+  PyObject **pyptrs;
+  size_t i, count;
+
+  if (pending_decrefs.count == 0) return;
+
+  rb_nativethread_lock_lock(&pending_decrefs.lock);
+  pyptrs = pending_decrefs.pyptrs;
+  count = pending_decrefs.count;
+  pending_decrefs.pyptrs = NULL;
+  pending_decrefs.count = 0;
+  pending_decrefs.capacity = 0;
+  rb_nativethread_lock_unlock(&pending_decrefs.lock);
+
+  for (i = 0; i < count; ++i) {
+    pycall_Py_DecRef(pyptrs[i]);
+  }
+  free(pyptrs);
+}
+
 const rb_data_type_t pycall_pyptr_data_type = {
   "PyCall::PyPtr",
   { 0, pycall_pyptr_free, pycall_pyptr_memsize, },
@@ -129,6 +181,11 @@ const rb_data_type_t pycall_pyptr_data_type = {
 #endif
 };
 
+/* pycall_pyptr_free may be called by the GC sweeper on a thread that does
+ * not hold the GIL.  PyCall keeps the GIL held by the thread that
+ * initialized Python for the entire lifetime of the process, so waiting
+ * for the GIL there (PyGILState_Ensure) blocks forever while the sweeper
+ * holds the GVL, freezing every Ruby thread in the process. */
 void
 pycall_pyptr_free(void *ptr)
 {
@@ -143,9 +200,9 @@ pycall_pyptr_free(void *ptr)
     pycall_Py_DecRef(pyobj);
   }
   else {
-    PyGILState_STATE gstate = Py_API(PyGILState_Ensure)();
-    pycall_Py_DecRef(pyobj);
-    Py_API(PyGILState_Release)(gstate);
+    /* Instead of taking the GIL here, enqueue the pointer; the list is
+     * drained on the next Python call. */
+    pycall_pending_decref_add(pyobj);
   }
 }
 
@@ -627,6 +684,8 @@ pycall_libpython_api_PyObject_Dir(VALUE mod, VALUE pyptr)
   PyObject *dir;
   PyObject *pyobj;
 
+  pycall_drain_pending_decrefs();
+
   if (!is_pycall_pyptr(pyptr)) {
     rb_raise(rb_eTypeError, "PyCall::PyPtr is required");
   }
@@ -645,6 +704,8 @@ pycall_libpython_api_PyList_Size(VALUE mod, VALUE pyptr)
 {
   PyObject *pyobj;
   Py_ssize_t size;
+
+  pycall_drain_pending_decrefs();
 
   if (!is_pycall_pyptr(pyptr)) {
     rb_raise(rb_eTypeError, "PyCall::PyPtr is required");
@@ -665,6 +726,8 @@ pycall_libpython_api_PyList_GetItem(VALUE mod, VALUE pyptr, VALUE idx)
   PyObject *pyobj;
   PyObject *pyobj_item;
   Py_ssize_t i;
+
+  pycall_drain_pending_decrefs();
 
   if (!is_pycall_pyptr(pyptr)) {
     rb_raise(rb_eTypeError, "PyCall::PyPtr is required");
@@ -731,6 +794,8 @@ pycall_libpython_helpers_m_import_module(int argc, VALUE *argv, VALUE mod)
   VALUE name, globals, locals, fromlist, level;
   char const *name_cstr;
 
+  pycall_drain_pending_decrefs();
+
   rb_scan_args(argc, argv, "14", &name, &globals, &locals, &fromlist, &level);
 
   if (RB_TYPE_P(name, T_SYMBOL)) {
@@ -782,6 +847,8 @@ pycall_libpython_helpers_m_compare(VALUE mod, VALUE op, VALUE pyptr_a, VALUE pyp
 {
   PyObject *pyobj_a, *pyobj_b, *res;
   int opid;
+
+  pycall_drain_pending_decrefs();
 
   opid = pycall_rich_compare_opid(op);
 
@@ -837,6 +904,8 @@ pycall_libpython_helpers_m_getattr(int argc, VALUE *argv, VALUE mod)
 {
   VALUE pyptr, name, default_value;
 
+  pycall_drain_pending_decrefs();
+
   if (rb_scan_args(argc, argv, "21", &pyptr, &name, &default_value) == 2) {
     default_value = Qundef;
   }
@@ -858,6 +927,8 @@ pycall_libpython_helpers_m_hasattr_p(VALUE mod, VALUE pyptr, VALUE name)
   PyObject *pyobj;
   int res;
 
+  pycall_drain_pending_decrefs();
+
   if (!is_pycall_pyptr(pyptr)) {
     rb_raise(rb_eTypeError, "PyCall::PyPtr is required");
   }
@@ -876,6 +947,8 @@ static VALUE
 pycall_libpython_helpers_m_setattr(VALUE mod, VALUE pyptr, VALUE name, VALUE val)
 {
   PyObject *pyobj, *pyval;
+
+  pycall_drain_pending_decrefs();
 
   if (!is_pycall_pyptr(pyptr)) {
     rb_raise(rb_eTypeError, "PyCall::PyPtr is required");
@@ -900,6 +973,8 @@ pycall_libpython_helpers_m_delattr(VALUE mod, VALUE pyptr, VALUE name)
 {
   PyObject *pyobj;
 
+  pycall_drain_pending_decrefs();
+
   if (!is_pycall_pyptr(pyptr)) {
     rb_raise(rb_eTypeError, "PyCall::PyPtr is required");
   }
@@ -923,6 +998,8 @@ pycall_libpython_helpers_m_callable_p(VALUE mod, VALUE pyptr)
   PyObject *pyobj;
   int res;
 
+  pycall_drain_pending_decrefs();
+
   if (!is_pycall_pyptr(pyptr)) {
     rb_raise(rb_eTypeError, "PyCall::PyPtr is required");
   }
@@ -938,6 +1015,8 @@ pycall_libpython_helpers_m_call_object(int argc, VALUE *argv, VALUE mod)
 {
   VALUE pyptr;
   PyObject *pyobj;
+
+  pycall_drain_pending_decrefs();
 
   if (argc < 1) {
     rb_raise(rb_eArgError, "too few arguments (%d for >=1)", argc);
@@ -1088,6 +1167,8 @@ pycall_pyobject_wrapper_wrapper_method(int argc, VALUE *argv, VALUE wrapper)
   char *name_cstr;
   PyObject *pyobj, *attr;
 
+  pycall_drain_pending_decrefs();
+
   pyptr = rb_attr_get(wrapper, rb_intern("@__pyptr__"));
   if (NIL_P(pyptr) || !is_pycall_pyptr(pyptr)) {
     rb_raise(rb_eTypeError, "Wrong wrapper object is given");
@@ -1142,6 +1223,8 @@ pycall_libpython_helpers_m_define_wrapper_method(VALUE mod, VALUE wrapper, VALUE
   VALUE pyptr;
   PyObject *pyobj, *attr;
   char *name_cstr;
+
+  pycall_drain_pending_decrefs();
 
   pyptr = rb_attr_get(wrapper, rb_intern("@__pyptr__"));
   if (NIL_P(pyptr) || !is_pycall_pyptr(pyptr)) {
@@ -1208,6 +1291,8 @@ pycall_libpython_helpers_m_getitem(VALUE mod, VALUE pyptr, VALUE key)
   PyObject *pyobj, *pyobj_key, *pyobj_v;
   VALUE obj;
 
+  pycall_drain_pending_decrefs();
+
   if (!is_pycall_pyptr(pyptr)) {
     rb_raise(rb_eTypeError, "PyCall::PyPtr is required");
   }
@@ -1233,6 +1318,8 @@ pycall_libpython_helpers_m_setitem(VALUE mod, VALUE pyptr, VALUE key, VALUE v)
   PyObject *pyobj, *pyobj_key, *pyobj_value;
   int res;
 
+  pycall_drain_pending_decrefs();
+
   pyobj = check_get_pyobj_ptr(pyptr, NULL);
   pyobj_key = pycall_convert_index(key);
   pyobj_value = pycall_pyobject_from_ruby(v);
@@ -1253,6 +1340,8 @@ pycall_libpython_helpers_m_delitem(VALUE mod, VALUE pyptr, VALUE key)
   PyObject *pyobj, *pyobj_key;
   int res;
 
+  pycall_drain_pending_decrefs();
+
   pyobj = check_get_pyobj_ptr(pyptr, NULL);
   pyobj_key = pycall_convert_index(key);
 
@@ -1269,6 +1358,8 @@ static VALUE
 pycall_libpython_helpers_m_str(VALUE mod, VALUE pyptr)
 {
   PyObject *pyobj, *pyobj_str;
+
+  pycall_drain_pending_decrefs();
 
   pyobj = check_get_pyobj_ptr(pyptr, NULL);
 
@@ -1288,6 +1379,8 @@ pycall_libpython_helpers_m_dict_contains(VALUE mod, VALUE pyptr, VALUE key)
   PyObject *pyobj, *pyobj_key;
   int res;
 
+  pycall_drain_pending_decrefs();
+
   pyobj = check_get_pyobj_ptr(pyptr, Py_API(PyDict_Type));
   pyobj_key = pycall_pyobject_from_ruby(key);
   res = Py_API(PyDict_Contains)(pyobj, pyobj_key);
@@ -1304,6 +1397,8 @@ pycall_libpython_helpers_m_dict_each(VALUE mod, VALUE pyptr)
 {
   PyObject *pyobj, *pyobj_key, *pyobj_value;
   Py_ssize_t pos;
+
+  pycall_drain_pending_decrefs();
 
   pyobj = check_get_pyobj_ptr(pyptr, Py_API(PyDict_Type));
 
@@ -1324,6 +1419,8 @@ pycall_libpython_helpers_m_sequence_contains(VALUE mod, VALUE pyptr, VALUE key)
   PyObject *pyobj, *pyobj_key;
   int res;
 
+  pycall_drain_pending_decrefs();
+
   pyobj = check_get_pyobj_ptr(pyptr, NULL);
   if (!Py_API(PySequence_Check)(pyobj))
     rb_raise(rb_eTypeError, "unexpected Python type %s (expected a Python sequence object)", Py_TYPE(pyobj)->tp_name);
@@ -1342,6 +1439,8 @@ static VALUE
 pycall_libpython_helpers_m_sequence_each(VALUE mod, VALUE pyptr)
 {
   PyObject *pyobj, *pyobj_iter, *pyobj_item;
+
+  pycall_drain_pending_decrefs();
 
   pyobj = check_get_pyobj_ptr(pyptr, NULL);
   if (!Py_API(PySequence_Check)(pyobj))
@@ -1786,7 +1885,11 @@ pycall_conv_m_unregister_python_type_mapping(VALUE mod, VALUE pytypeptr)
 static VALUE
 pycall_conv_m_from_ruby(VALUE mod, VALUE obj)
 {
-  PyObject *pyobj = pycall_pyobject_from_ruby(obj);
+  PyObject *pyobj;
+
+  pycall_drain_pending_decrefs();
+
+  pyobj = pycall_pyobject_from_ruby(obj);
   if (PyType_Check(pyobj) || PyClass_Check(pyobj))
     return pycall_pytypeptr_new(pyobj);
   if (PyRuby_Check(pyobj))
@@ -1798,7 +1901,11 @@ static VALUE
 pycall_conv_m_to_ruby(VALUE mod, VALUE pyptr)
 {
   VALUE obj, obj_pyptr;
-  PyObject *pyobj = check_get_pyobj_ptr(pyptr, NULL);
+  PyObject *pyobj;
+
+  pycall_drain_pending_decrefs();
+
+  pyobj = check_get_pyobj_ptr(pyptr, NULL);
   obj = obj_pyptr = pycall_pyobject_to_ruby(pyobj);
   if (is_pyobject_wrapper(obj)) {
     obj_pyptr = pycall_pyobject_wrapper_get_pyptr(obj);
@@ -2319,6 +2426,8 @@ Init_pycall(void)
 
   pycall_tls_create((pycall_tls_key *)&without_gvl_key);
   rb_define_module_function(mPyCall, "without_gvl", pycall_m_without_gvl, 0);
+
+  rb_nativethread_lock_initialize(&pending_decrefs.lock);
 
   /* PyCall::PyPtr */
 

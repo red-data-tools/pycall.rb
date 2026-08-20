@@ -11,6 +11,7 @@ extern "C" {
 #include <ruby.h>
 #include <ruby/encoding.h>
 #include <ruby/thread.h>
+#include <ruby/thread_native.h>
 
 #include <assert.h>
 #include <inttypes.h>
