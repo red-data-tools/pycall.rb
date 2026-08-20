@@ -3,6 +3,17 @@ require "rbconfig"
 require "timeout"
 
 RSpec.describe "GC of PyCall::PyPtr on non-main threads" do
+  before do
+    # On CPython >= 3.12 the current thread state became a real thread-local,
+    # so *any* PyCall call from a thread other than the one that initialized
+    # Python crashes with a segmentation fault before the GC scenario below
+    # can even be reached.  That pre-existing crash is unrelated to the GC
+    # deadlock this spec guards against, so skip there.
+    if Gem::Version.new(PyCall::PYTHON_VERSION) >= Gem::Version.new("3.12")
+      skip "PyCall cannot be called from non-main threads on Python >= 3.12"
+    end
+  end
+
   it "does not deadlock when the GC sweeper frees a PyPtr on a thread that does not hold the GIL" do
     # The thread that initializes Python keeps the GIL for the lifetime of
     # the process, so waiting for the GIL inside the GC sweeper on any other
