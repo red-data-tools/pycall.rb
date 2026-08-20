@@ -121,6 +121,65 @@ pycall_m_without_gvl(VALUE mod)
 
 /* ==== PyCall::PyPtr ==== */
 
+/* pycall_pyptr_free may be called by the GC sweeper on a thread that does
+ * not hold the GIL.  PyCall keeps the GIL held by the thread that
+ * initialized Python for the entire lifetime of the process, so waiting
+ * for the GIL there (PyGILState_Ensure) blocks forever while the sweeper
+ * holds the GVL, freezing every Ruby thread in the process.
+ *
+ * Instead of taking the GIL in the free function, enqueue the pointer
+ * into this list; it is drained on the next Python call. */
+
+struct pending_decref_list {
+  rb_nativethread_lock_t lock;
+  PyObject **pyptrs;
+  size_t count;
+  size_t capacity;
+};
+
+static struct pending_decref_list pending_decrefs;
+
+static void
+pycall_pending_decref_add(PyObject *pyobj)
+{
+  rb_nativethread_lock_lock(&pending_decrefs.lock);
+  if (pending_decrefs.count == pending_decrefs.capacity) {
+    size_t new_capacity = pending_decrefs.capacity ? 2 * pending_decrefs.capacity : 64;
+    PyObject **new_pyptrs = realloc(pending_decrefs.pyptrs, new_capacity * sizeof(PyObject *));
+    if (new_pyptrs == NULL) {
+      /* Leaking the object is preferable to blocking or crashing inside GC */
+      rb_nativethread_lock_unlock(&pending_decrefs.lock);
+      return;
+    }
+    pending_decrefs.pyptrs = new_pyptrs;
+    pending_decrefs.capacity = new_capacity;
+  }
+  pending_decrefs.pyptrs[pending_decrefs.count++] = pyobj;
+  rb_nativethread_lock_unlock(&pending_decrefs.lock);
+}
+
+void
+pycall_drain_pending_decrefs(void)
+{
+  PyObject **pyptrs;
+  size_t i, count;
+
+  if (pending_decrefs.count == 0) return;
+
+  rb_nativethread_lock_lock(&pending_decrefs.lock);
+  pyptrs = pending_decrefs.pyptrs;
+  count = pending_decrefs.count;
+  pending_decrefs.pyptrs = NULL;
+  pending_decrefs.count = 0;
+  pending_decrefs.capacity = 0;
+  rb_nativethread_lock_unlock(&pending_decrefs.lock);
+
+  for (i = 0; i < count; ++i) {
+    pycall_Py_DecRef(pyptrs[i]);
+  }
+  free(pyptrs);
+}
+
 const rb_data_type_t pycall_pyptr_data_type = {
   "PyCall::PyPtr",
   { 0, pycall_pyptr_free, pycall_pyptr_memsize, },
@@ -143,9 +202,7 @@ pycall_pyptr_free(void *ptr)
     pycall_Py_DecRef(pyobj);
   }
   else {
-    PyGILState_STATE gstate = Py_API(PyGILState_Ensure)();
-    pycall_Py_DecRef(pyobj);
-    Py_API(PyGILState_Release)(gstate);
+    pycall_pending_decref_add(pyobj);
   }
 }
 
@@ -837,6 +894,8 @@ pycall_libpython_helpers_m_getattr(int argc, VALUE *argv, VALUE mod)
 {
   VALUE pyptr, name, default_value;
 
+  pycall_drain_pending_decrefs();
+
   if (rb_scan_args(argc, argv, "21", &pyptr, &name, &default_value) == 2) {
     default_value = Qundef;
   }
@@ -938,6 +997,8 @@ pycall_libpython_helpers_m_call_object(int argc, VALUE *argv, VALUE mod)
 {
   VALUE pyptr;
   PyObject *pyobj;
+
+  pycall_drain_pending_decrefs();
 
   if (argc < 1) {
     rb_raise(rb_eArgError, "too few arguments (%d for >=1)", argc);
@@ -2319,6 +2380,8 @@ Init_pycall(void)
 
   pycall_tls_create((pycall_tls_key *)&without_gvl_key);
   rb_define_module_function(mPyCall, "without_gvl", pycall_m_without_gvl, 0);
+
+  rb_nativethread_lock_initialize(&pending_decrefs.lock);
 
   /* PyCall::PyPtr */
 
