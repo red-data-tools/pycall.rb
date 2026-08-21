@@ -1,5 +1,15 @@
 # The change history of PyCall
 
+## 1.5.3
+
+* Add support for Ruby 4.1 (#225).
+
+  *andreyzhelnin-st*
+
+* Add support for multi-threading (#223, #224).
+
+  *andreyzhelnin-st*
+
 ## 1.5.2
 
 * Fix memory leak with str(list) (#169).
