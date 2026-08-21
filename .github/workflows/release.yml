@@ -1,0 +1,48 @@
+name: Release
+on:
+  push:
+    tags:
+      - "*"
+jobs:
+  github:
+    name: GitHub
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      discussions: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Extract release note
+        run: |
+          ruby \
+            -e 'print("## PyCall "); \
+                puts(ARGF.read.split(/^## /)[1])' \
+            CHANGES.md > release-note.md
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title=$(head -n1 release-note.md | sed -e 's/^## //')
+          tail -n +2 release-note.md > release-note-without-version.md
+          gh release create ${GITHUB_REF_NAME} \
+            --discussion-category Announcements \
+            --notes-file release-note-without-version.md \
+            --title "${title}"
+  rubygems:
+    name: RubyGems
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ruby
+          bundler-cache: true
+      - uses: rubygems/configure-rubygems-credentials@v2.1.0
+      - name: Push gems
+        run: |
+          bundle exec rake release:rubygem_push
