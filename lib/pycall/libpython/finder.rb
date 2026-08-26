@@ -73,6 +73,7 @@ module PyCall
           if python_config[:LIBRARY]
             ext = File.extname(python_config[:LIBRARY])
             names << python_config[:LIBRARY].delete_suffix(ext) + suffix
+            names << python_config[:LIBRARY].delete_suffix(ext) + ".#{LIBSUFFIX}" 
           end
           dlprefix = if windows? then "" else "lib" end
           sysdata = {
