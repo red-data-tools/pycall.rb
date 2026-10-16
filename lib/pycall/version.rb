@@ -1,5 +1,5 @@
 module PyCall
-  VERSION = "1.5.3"
+  VERSION = "1.5.4"
 
   module Version
     numbers, TAG = VERSION.split("-")
