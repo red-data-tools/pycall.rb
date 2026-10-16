@@ -1,5 +1,11 @@
 # The change history of PyCall
 
+## 1.5.4
+
+* Fix GC compaction related crash (#230, #231).
+
+  *himotoyoshi*
+
 ## 1.5.3
 
 * Add support for Ruby 4.1 (#225).
