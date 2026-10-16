@@ -746,11 +746,9 @@ void pycall_init_ruby_wrapper(void);
 extern intptr_t pycall_hash_salt;
 extern VALUE pycall_mPyCall;
 extern VALUE pycall_cPyPtr;
-extern VALUE pycall_eError;
 
 #define mPyCall pycall_mPyCall
 #define cPyPtr pycall_cPyPtr
-#define eError pycall_eError
 
 /* #define PYCALL_DEBUG_DUMP_REFCNT */
 

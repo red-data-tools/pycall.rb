@@ -10,26 +10,57 @@ VALUE mLibPython;
 VALUE mAPI;
 VALUE mHelpers;
 VALUE mConversion;
-VALUE mPyObjectWrapper;
-VALUE mPyTypeObjectWrapper;
 VALUE mGCGuard;
 
 VALUE pycall_cPyPtr;
 VALUE cPyTypePtr;
-VALUE cTuple;
-VALUE cPyError;
 
-VALUE pycall_eError;
-
-static VALUE pycall_libpython_handle;
 static VALUE python_description;
 static VALUE python_version_string;
 static Py_ssize_t python_hexversion;
 static int python_major_version;
 static int python_has_stackless_extension;
 static PyObject *python_builtins_module;
-static VALUE python_type_mapping;
 static ID id_python_type_mapping;
+
+/* Don't keep Ruby objects that aren't pinned in C global variables.
+ * They may be moved by GC compaction. */
+
+static inline VALUE
+libpython_handle(void)
+{
+  return rb_funcall(mLibPython, rb_intern("handle"), 0);
+}
+
+static inline VALUE
+pyobject_wrapper_module(void)
+{
+  return rb_const_get_at(mPyCall, rb_intern("PyObjectWrapper"));
+}
+
+static inline VALUE
+pytypeobject_wrapper_module(void)
+{
+  return rb_const_get_at(mPyCall, rb_intern("PyTypeObjectWrapper"));
+}
+
+static inline VALUE
+error_class(void)
+{
+  return rb_const_get_at(mPyCall, rb_intern("Error"));
+}
+
+static inline VALUE
+pyerror_class(void)
+{
+  return rb_const_get_at(mPyCall, rb_intern("PyError"));
+}
+
+static inline VALUE
+python_type_mapping(void)
+{
+  return rb_ivar_get(mConversion, id_python_type_mapping);
+}
 
 int
 pycall_python_major_version(void)
@@ -1470,7 +1501,7 @@ pycall_libpython_helpers_m_sequence_each(VALUE mod, VALUE pyptr)
 static int
 is_pyobject_wrapper(VALUE obj)
 {
-  return RTEST(rb_obj_is_kind_of(obj, mPyObjectWrapper));
+  return RTEST(rb_obj_is_kind_of(obj, pyobject_wrapper_module()));
 }
 
 static VALUE
@@ -1523,7 +1554,7 @@ pycall_python_type_mapping_get_mapped_ancestor_class(VALUE pytypeptr)
   args[0] = pytypeptr;
   args[1] = Qnil;
 
-  rb_hash_foreach(python_type_mapping, get_mapped_ancestor_class_iter, (VALUE)args);
+  rb_hash_foreach(python_type_mapping(), get_mapped_ancestor_class_iter, (VALUE)args);
 
   return args[1];
 }
@@ -1533,7 +1564,7 @@ pycall_python_type_mapping_get_mapped_class(VALUE pytypeptr)
 {
   VALUE mapped;
   (void)check_get_pytypeobj_ptr(pytypeptr);
-  mapped = rb_hash_lookup(python_type_mapping, pytypeptr);
+  mapped = rb_hash_lookup(python_type_mapping(), pytypeptr);
   if (NIL_P(mapped)) {
     mapped = pycall_python_type_mapping_get_mapped_ancestor_class(pytypeptr);
   }
@@ -1544,16 +1575,16 @@ static int
 pycall_python_type_mapping_register(VALUE pytypeptr, VALUE rbcls)
 {
   (void)check_get_pytypeobj_ptr(pytypeptr);
-  if (rb_hash_lookup2(python_type_mapping, pytypeptr, Qundef) != Qundef)
+  if (rb_hash_lookup2(python_type_mapping(), pytypeptr, Qundef) != Qundef)
     return 0;
 
   Check_Type(rbcls, T_CLASS);
-  if (!rb_obj_is_kind_of(rbcls, mPyTypeObjectWrapper)) {
+  if (!rb_obj_is_kind_of(rbcls, pytypeobject_wrapper_module())) {
     rb_raise(rb_eTypeError, "ruby class must be extended by PyCall::PyTypeObjectWrapper");
   }
 
   /* TODO: Shouldn't have to use weak reference? */
-  rb_hash_aset(python_type_mapping, pytypeptr, rbcls);
+  rb_hash_aset(python_type_mapping(), pytypeptr, rbcls);
 
   return 1;
 }
@@ -1562,10 +1593,10 @@ static int
 pycall_python_type_mapping_unregister(VALUE pytypeptr)
 {
   (void)check_get_pytypeobj_ptr(pytypeptr);
-  if (rb_hash_lookup2(python_type_mapping, pytypeptr, Qundef) == Qundef)
+  if (rb_hash_lookup2(python_type_mapping(), pytypeptr, Qundef) == Qundef)
     return 0;
 
-  rb_hash_delete(python_type_mapping, pytypeptr);
+  rb_hash_delete(python_type_mapping(), pytypeptr);
   return 1;
 }
 
@@ -1576,7 +1607,7 @@ pycall_pyobject_wrapper_object_new(VALUE klass, PyObject *pyobj)
 
   obj = rb_obj_alloc(klass);
   rb_ivar_set(obj, rb_intern("@__pyptr__"), pycall_pyptr_new(pyobj));
-  rb_extend_object(obj, mPyObjectWrapper);
+  rb_extend_object(obj, pyobject_wrapper_module());
 
   return obj;
 }
@@ -2166,7 +2197,7 @@ pycall_pyerror_new(PyObject *type, PyObject *value, PyObject *traceback)
   init_args[1] = value ? pycall_pyobject_to_ruby(value) : Qnil;
   init_args[2] = traceback ? pycall_pyobject_to_ruby(traceback) : Qnil;
 
-  return rb_class_new_instance(3, init_args, cPyError);
+  return rb_class_new_instance(3, init_args, pyerror_class());
 }
 
 VALUE
@@ -2200,7 +2231,7 @@ pycall_pyerror_fetch_and_raise(char const *format, ...)
   msg = rb_vsprintf(format, args);
   va_end(args);
 
-  rb_exc_raise(rb_exc_new3(eError, msg));
+  rb_exc_raise(rb_exc_new3(error_class(), msg));
 }
 
 unsigned long
@@ -2331,7 +2362,7 @@ init_python(void)
   Py_API(Py_IncRef)((PyObject *)Py_API(PyUnicode_Type));
   rb_define_const(mAPI, "PyUnicode_Type", pycall_pytypeptr_new((PyObject *)Py_API(PyUnicode_Type)));
 
-  pycall_init_exceptions(pycall_libpython_handle);
+  pycall_init_exceptions(libpython_handle());
 }
 
 static VALUE
@@ -2392,6 +2423,7 @@ pycall_pyerror_s_fetch(VALUE klass)
 static void
 init_pyerror(void)
 {
+  VALUE cPyError = pyerror_class();
   rb_define_singleton_method(cPyError, "occurred?", pycall_pyerror_s_occurred_p, 0);
   rb_define_singleton_method(cPyError, "fetch", pycall_pyerror_s_fetch, 0);
 }
@@ -2399,7 +2431,7 @@ init_pyerror(void)
 static void
 init_tuple(void)
 {
-  cTuple = rb_funcall(mPyCall, rb_intern("wrap_class"), 1, pycall_pytypeptr_new((PyObject *)Py_API(PyTuple_Type)));
+  VALUE cTuple = rb_funcall(mPyCall, rb_intern("wrap_class"), 1, pycall_pytypeptr_new((PyObject *)Py_API(PyTuple_Type)));
   rb_define_const(mPyCall, "Tuple", cTuple);
   rb_funcall(cTuple, rb_intern("register_python_type_mapping"), 0);
   rb_define_singleton_method(cTuple, "new", pycall_tuple_s_new, -1);
@@ -2414,11 +2446,7 @@ Init_pycall(void)
   pycall_hash_salt = FIX2LONG(rb_hash(rb_str_new2("PyCall::PyObject")));
 
   mPyCall = rb_define_module("PyCall");
-  mPyObjectWrapper = rb_const_get_at(mPyCall, rb_intern("PyObjectWrapper"));
-  mPyTypeObjectWrapper = rb_const_get_at(mPyCall, rb_intern("PyTypeObjectWrapper"));
   mGCGuard = rb_define_module_under(mPyCall, "GCGuard");
-  eError = rb_const_get_at(mPyCall, rb_intern("Error"));
-  cPyError = rb_const_get_at(mPyCall, rb_intern("PyError"));
 
   /* PyCall */
 
@@ -2470,8 +2498,7 @@ Init_pycall(void)
   /* PyCall::LibPython::API */
 
   mLibPython = rb_define_module_under(mPyCall, "LibPython");
-  pycall_libpython_handle = rb_funcall(mLibPython, rb_intern("handle"), 0);
-  pycall_init_libpython_api_table(pycall_libpython_handle);
+  pycall_init_libpython_api_table(libpython_handle());
 
   mAPI = rb_define_module_under(mLibPython, "API");
 
@@ -2513,9 +2540,8 @@ Init_pycall(void)
   rb_define_module_function(mConversion, "from_ruby", pycall_conv_m_from_ruby, 1);
   rb_define_module_function(mConversion, "to_ruby", pycall_conv_m_to_ruby, 1);
 
-  python_type_mapping = rb_hash_new();
   id_python_type_mapping = rb_intern("__python_type_mapping__");
-  rb_ivar_set(mConversion, id_python_type_mapping, python_type_mapping);
+  rb_ivar_set(mConversion, id_python_type_mapping, rb_hash_new());
 
   /* initialize the constat PYTHON_VERSION */
 
