@@ -194,7 +194,7 @@ pycall_init_libpython_api_table(VALUE libpython_handle)
   if (python_string_as_bytes) {
     INIT_API_TABLE_ENTRY2(PyString_AsStringAndSize, PyBytes_AsStringAndSize, required);
     INIT_API_TABLE_ENTRY2(PyString_FromStringAndSize, PyBytes_FromStringAndSize, required);
-    INIT_API_TABLE_ENTRY2(PyString_FromFormatV, PyBytes_FromFormat, required);
+    INIT_API_TABLE_ENTRY2(PyString_FromFormatV, PyBytes_FromFormatV, required);
   }
   else {
     INIT_API_TABLE_ENTRY(PyString_AsStringAndSize, required);

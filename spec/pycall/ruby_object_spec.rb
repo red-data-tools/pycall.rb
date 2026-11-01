@@ -24,6 +24,15 @@ RSpec.describe PyCall do
       }.to yield_with_args(42)
     end
 
+    it 'can be converted to string by repr()' do
+      obj = Object.new
+      def obj.inspect
+        "#<test object>"
+      end
+      pyobj = PyCall.wrap_ruby_object(obj)
+      expect(PyCall.builtins.repr(pyobj)).to eq("<PyCall.ruby_object #<test object>>")
+    end
+
     xit 'guards the ruby object by GC while the wrapper python object is alive' do
       pyobj, obj_id = nil
       tap {

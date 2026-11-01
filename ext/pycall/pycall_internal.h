@@ -16,6 +16,7 @@ extern "C" {
 #include <assert.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <stdarg.h>
 
 #if defined(_WIN32)
 # define PYCALL_THREAD_WIN32
@@ -670,11 +671,11 @@ typedef struct {
 
   int (* PyString_AsStringAndSize)(PyObject *, char **, Py_ssize_t *);
   PyObject * (* PyString_FromStringAndSize)(char *, Py_ssize_t);
-  PyObject * (* PyString_FromFormatV)(char const*, ...);
+  PyObject * (* PyString_FromFormatV)(char const*, va_list);
 
   PyObject * (* PyUnicode_AsUTF8String)(PyObject *);
   PyObject * (* PyUnicode_DecodeUTF8)(char const*, Py_ssize_t, char const *);
-  PyObject * (* PyUnicode_FromFormatV)(char const*, ...);
+  PyObject * (* PyUnicode_FromFormatV)(char const*, va_list);
 
   int (* PyGILState_Check)(void);
   PyGILState_STATE (* PyGILState_Ensure)(void);
