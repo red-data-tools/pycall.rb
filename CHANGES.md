@@ -1,5 +1,11 @@
 # The change history of PyCall
 
+## 1.5.5
+
+* Fix `repr()` clash on macOS (#233, #234).
+
+  *himotoyoshi*
+
 ## 1.5.4
 
 * Fix GC compaction related crash (#230, #231).
