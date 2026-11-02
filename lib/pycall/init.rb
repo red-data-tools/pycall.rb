@@ -45,6 +45,17 @@ module PyCall
     require 'pycall/slice'
     const_set(:PYTHON_VERSION, LibPython::PYTHON_VERSION)
     const_set(:PYTHON_DESCRIPTION, LibPython::PYTHON_DESCRIPTION)
+
+    @init_thread_id = Thread.current.object_id
+    at_exit do
+      # Finalize is only safe to call if we're on the same thread that initialized PyCall
+      finalize if Thread.current.object_id == @init_thread_id
+    end
+
     true
+  end
+
+  def self.finalize
+    LibPython::API.Py_FinalizeEx()
   end
 end
