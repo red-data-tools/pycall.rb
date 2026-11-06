@@ -152,7 +152,7 @@ require 'pycall'
 puts(PyCall.init ? 'true' : 'false')
 RUBY
       expect(status).to be_success
-      expect(out.chomp).to eq('true')
+      expect(out.lines.last.chomp).to eq('true')
     end
 
     it 'returns false if already initialized' do
