@@ -86,7 +86,10 @@ you can change the Python version by setting the `PYTHON` environment variable
 to the path of the `python` executable.
 
 When `PYTHON` is not specified, pycall.rb tries to use `python3` first,
-and then tries to use `python`.
+and then tries to use `python`.  On Windows, it then tries `python.exe` in
+`CONDA_PREFIX`, and then the installations registered in the Windows registry
+under `Software\Python`, which includes Anaconda when it was registered by its
+installer.
 
 ### Releasing the RubyVM GVL during Python function calls
 
