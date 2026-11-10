@@ -23,6 +23,12 @@ static int python_has_stackless_extension;
 static PyObject *python_builtins_module;
 static ID id_python_type_mapping;
 
+/* Types used by pycall_is_python_routine (NULL when not available) */
+static PyTypeObject *python_builtin_function_type; /* builtin_function_or_method */
+static PyTypeObject *python_method_type;           /* bound method (instancemethod in Python 2) */
+static PyTypeObject *python_method_wrapper_type;   /* method-wrapper */
+static PyTypeObject *python_partial_type;          /* functools.partial */
+
 /* Don't keep Ruby objects that aren't pinned in C global variables.
  * They may be moved by GC compaction. */
 
@@ -1191,6 +1197,63 @@ pycall_call_python_callable(PyObject *pycallable, int argc, VALUE *argv)
   return obj;
 }
 
+static int
+pycall_type_is_subtype(PyTypeObject *type, PyTypeObject *base)
+{
+  if (!base)
+    return 0;
+  for (; type; type = type->tp_base) {
+    if (type == base)
+      return 1;
+  }
+  return 0;
+}
+
+/* Returns true if pyobj is a function-like routine, i.e. a callable that
+ * Python's inspect.isroutine() recognizes:
+ *
+ * - builtin functions and methods (builtin_function_or_method),
+ * - bound methods (method),
+ * - method-wrapper objects,
+ * - non-data descriptors (types that define __get__ but not __set__),
+ *   which covers Python functions, method descriptors, slot wrappers,
+ *   Cython functions, functools.lru_cache wrappers, numpy's array function
+ *   dispatchers, and so on.
+ *
+ * functools.partial is also treated as a routine because it is one since
+ * Python 3.14 (it gained __get__), and we want the same behavior on older
+ * Python versions.  Ruby's Proc and Method objects wrapped in Python are
+ * treated as routines, too.
+ *
+ * Other callable objects, such as instances of a class defining __call__
+ * (e.g. scipy.stats.norm) and numpy ufuncs, are not routines. */
+static int
+pycall_is_python_routine(PyObject *pyobj)
+{
+  PyTypeObject *type = Py_TYPE(pyobj);
+
+  if (pycall_type_is_subtype(type, python_builtin_function_type) ||
+      pycall_type_is_subtype(type, python_method_type) ||
+      pycall_type_is_subtype(type, python_method_wrapper_type)) {
+    return 1;
+  }
+
+  if (type->tp_descr_get != NULL && type->tp_descr_set == NULL) {
+    return 1;
+  }
+
+  if (pycall_type_is_subtype(type, python_partial_type)) {
+    return 1;
+  }
+
+  if (PyRuby_Check(pyobj)) {
+    VALUE obj = PyRuby_get_ruby_object(pyobj);
+    return RTEST(rb_obj_is_proc(obj)) || RTEST(rb_obj_is_method(obj));
+  }
+
+  return 0;
+}
+
 static VALUE
 pycall_pyobject_wrapper_wrapper_method(int argc, VALUE *argv, VALUE wrapper)
 {
@@ -1242,6 +1305,16 @@ pycall_pyobject_wrapper_wrapper_method(int argc, VALUE *argv, VALUE wrapper)
 
   if (PyType_Check(attr) || PyClass_Check(attr))
     return pycall_pyobject_to_ruby(attr);
+
+  /* Ruby cannot distinguish `obj.attr` from `obj.attr()`.  When no argument
+   * is given, call the attribute only if it is a routine such as a function
+   * or a method; return other callable objects (e.g. scipy.stats.norm) as
+   * they are so that `obj.attr.meth(...)` works as in Python. */
+  if (argc == 0 && !pycall_is_python_routine(attr)) {
+    VALUE obj = pycall_pyobject_to_ruby(attr);
+    pycall_Py_DecRef(attr);
+    return obj;
+  }
 
   VALUE obj = pycall_call_python_callable(attr, argc, argv);
   pycall_Py_DecRef(attr);
@@ -2287,6 +2360,40 @@ pycall_PyObject_DelAttrString(PyObject *pyobj, const char *attr_name)
   return Py_API(PyObject_SetAttrString)(pyobj, attr_name, NULL);
 }
 
+/* Returns the type object stored in pyobj.name, or NULL.
+ * The returned type is kept alive for the process lifetime. */
+static PyTypeObject *
+get_python_type_attr(PyObject *pyobj, char const *name)
+{
+  PyObject *attr = Py_API(PyObject_GetAttrString)(pyobj, name);
+  if (!attr) {
+    Py_API(PyErr_Clear)();
+    return NULL;
+  }
+  if (!PyType_Check(attr)) {
+    pycall_Py_DecRef(attr);
+    return NULL;
+  }
+  return (PyTypeObject *)attr;
+}
+
+/* Returns the type of pyobj.name, or NULL.
+ * The returned type is kept alive for the process lifetime. */
+static PyTypeObject *
+get_python_type_of_attr(PyObject *pyobj, char const *name)
+{
+  PyTypeObject *type;
+  PyObject *attr = Py_API(PyObject_GetAttrString)(pyobj, name);
+  if (!attr) {
+    Py_API(PyErr_Clear)();
+    return NULL;
+  }
+  type = Py_TYPE(attr);
+  Py_API(Py_IncRef)((PyObject *)type);
+  pycall_Py_DecRef(attr);
+  return type;
+}
+
 static void
 init_python(void)
 {
@@ -2330,6 +2437,32 @@ init_python(void)
       python_hexversion = Py_API(PyInt_AsSsize_t)(hexversion);
     else
       python_hexversion = Py_API(PyLong_AsSsize_t)(hexversion);
+  }
+
+  /* types for pycall_is_python_routine */
+
+  python_builtin_function_type = get_python_type_of_attr(python_builtins_module, "len");
+  python_method_wrapper_type = get_python_type_of_attr(Py_API(_Py_NoneStruct), "__repr__");
+  {
+    PyObject *types, *functools;
+
+    types = Py_API(PyImport_ImportModule)("types");
+    if (types) {
+      python_method_type = get_python_type_attr(types, "MethodType");
+      pycall_Py_DecRef(types);
+    }
+    else {
+      Py_API(PyErr_Clear)();
+    }
+
+    functools = Py_API(PyImport_ImportModule)("functools");
+    if (functools) {
+      python_partial_type = get_python_type_attr(functools, "partial");
+      pycall_Py_DecRef(functools);
+    }
+    else {
+      Py_API(PyErr_Clear)();
+    }
   }
 
   /* constants */
