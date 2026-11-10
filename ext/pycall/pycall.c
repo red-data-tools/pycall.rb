@@ -1477,6 +1477,18 @@ pycall_libpython_helpers_m_str(VALUE mod, VALUE pyptr)
   return v;
 }
 
+/* PyCall::Dict wraps dict and all of its subclasses (the type mapping falls
+ * back to the nearest mapped ancestor), so the dict helpers accept any
+ * instance of a dict subclass, not only an exact dict. */
+static PyObject *
+check_get_pydict_ptr(VALUE pyptr)
+{
+  PyObject *pyobj = check_get_pyobj_ptr(pyptr, NULL);
+  if (!PyType_FastSubclass(Py_TYPE(pyobj), Py_TPFLAGS_DICT_SUBCLASS))
+    rb_raise(rb_eTypeError, "unexpected Python type %s (expected dict or a subclass of dict)", Py_TYPE(pyobj)->tp_name);
+  return pyobj;
+}
+
 static VALUE
 pycall_libpython_helpers_m_dict_contains(VALUE mod, VALUE pyptr, VALUE key)
 {
@@ -1485,15 +1497,54 @@ pycall_libpython_helpers_m_dict_contains(VALUE mod, VALUE pyptr, VALUE key)
 
   pycall_drain_pending_decrefs();
 
-  pyobj = check_get_pyobj_ptr(pyptr, Py_API(PyDict_Type));
+  pyobj = check_get_pydict_ptr(pyptr);
   pyobj_key = pycall_pyobject_from_ruby(key);
-  res = Py_API(PyDict_Contains)(pyobj, pyobj_key);
+  if (Py_TYPE(pyobj) == Py_API(PyDict_Type)) {
+    res = Py_API(PyDict_Contains)(pyobj, pyobj_key);
+  }
+  else {
+    /* Same as Python's `key in obj`, so an overridden __contains__ is used. */
+    res = Py_API(PySequence_Contains)(pyobj, pyobj_key);
+  }
   pycall_Py_DecRef(pyobj_key);
   if (res == -1) {
-    pycall_pyerror_fetch_and_raise("PyDict_Contains");
+    pycall_pyerror_fetch_and_raise("PyDict_Contains or PySequence_Contains in pycall_libpython_helpers_m_dict_contains");
   }
 
   return res ? Qtrue : Qfalse;
+}
+
+static VALUE
+pycall_dict_items_each_body(VALUE arg)
+{
+  PyObject *pyobj_iter = (PyObject *)arg, *pyobj_item;
+
+  while ((pyobj_item = Py_API(PyIter_Next)(pyobj_iter))) {
+    VALUE key, value;
+    if (!PyType_FastSubclass(Py_TYPE(pyobj_item), Py_TPFLAGS_TUPLE_SUBCLASS) ||
+        Py_API(PyTuple_Size)(pyobj_item) != 2) {
+      VALUE msg = rb_sprintf("unexpected Python type %s in items() (expected a 2-tuple)", Py_TYPE(pyobj_item)->tp_name);
+      pycall_Py_DecRef(pyobj_item);
+      rb_exc_raise(rb_exc_new_str(rb_eTypeError, msg));
+    }
+    key = pycall_pyobject_to_ruby(Py_API(PyTuple_GetItem)(pyobj_item, 0));
+    value = pycall_pyobject_to_ruby(Py_API(PyTuple_GetItem)(pyobj_item, 1));
+    pycall_Py_DecRef(pyobj_item);
+    rb_yield(rb_assoc_new(key, value));
+  }
+
+  if (Py_API(PyErr_Occurred)() != NULL) {
+    pycall_pyerror_fetch_and_raise("PyIter_Next in pycall_libpython_helpers_m_dict_each");
+  }
+
+  return Qnil;
+}
+
+static VALUE
+pycall_dict_items_each_ensure(VALUE arg)
+{
+  pycall_Py_DecRef((PyObject *)arg);
+  return Qnil;
 }
 
 static VALUE
@@ -1504,7 +1555,28 @@ pycall_libpython_helpers_m_dict_each(VALUE mod, VALUE pyptr)
 
   pycall_drain_pending_decrefs();
 
-  pyobj = check_get_pyobj_ptr(pyptr, Py_API(PyDict_Type));
+  pyobj = check_get_pydict_ptr(pyptr);
+
+  if (Py_TYPE(pyobj) != Py_API(PyDict_Type)) {
+    /* A dict subclass may override items(), __iter__, or keep its own order
+     * (e.g. OrderedDict.move_to_end), which PyDict_Next would bypass.
+     * Iterate like Python's `for k, v in obj.items()` instead. */
+    PyObject *pyobj_items, *pyobj_iter;
+
+    pyobj_items = Py_API(PyObject_CallMethod)(pyobj, "items", "");
+    if (!pyobj_items) {
+      pycall_pyerror_fetch_and_raise("PyObject_CallMethod(items) in pycall_libpython_helpers_m_dict_each");
+    }
+    pyobj_iter = Py_API(PyObject_GetIter)(pyobj_items);
+    pycall_Py_DecRef(pyobj_items);
+    if (!pyobj_iter) {
+      pycall_pyerror_fetch_and_raise("PyObject_GetIter in pycall_libpython_helpers_m_dict_each");
+    }
+
+    rb_ensure(pycall_dict_items_each_body, (VALUE)pyobj_iter,
+              pycall_dict_items_each_ensure, (VALUE)pyobj_iter);
+    return Qnil;
+  }
 
   pos = 0;
   while (Py_API(PyDict_Next)(pyobj, &pos, &pyobj_key, &pyobj_value)) {
