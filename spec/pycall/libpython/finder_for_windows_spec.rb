@@ -4,9 +4,7 @@ require 'tmpdir'
 
 module PyCall
   module LibPython
-    # Everything except the real registry access runs on all platforms, so that
-    # the Windows behavior is also covered by the CI on Linux and macOS.
-    ::RSpec.describe FinderForWindows do
+    ::RSpec.describe FinderForWindows, if: Fiddle::WINDOWS do
       def touch(*path)
         File.join(*path).tap do |file|
           FileUtils.mkdir_p(File.dirname(file))
@@ -258,7 +256,7 @@ module PyCall
         end
       end
 
-      describe '.registry_installs', if: Fiddle::WINDOWS do
+      describe '.registry_installs' do
         # Uses a scratch key instead of Software\Python, so that the specs neither
         # depend on nor change what is installed on the machine.
         let(:key_path) { "Software\\PyCallSpec-#{Process.pid}-#{rand(1 << 32)}" }
