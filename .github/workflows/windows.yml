@@ -60,8 +60,9 @@ jobs:
         PYTHON: python
 
   # Python installations that are not on PATH, which PyCall has to find by itself:
-  # - registry-pythoncore: Python from python.org registered under Software\Python\PythonCore
-  # - registry-anaconda: Miniconda registered under Software\Python\ContinuumAnalytics
+  # - registry-pythoncore: Python of setup-python, registered under Software\Python\PythonCore
+  # - registry-miniconda: Miniconda installed with /RegisterPython=1, which registers itself
+  #   under Software\Python\PythonCore as well
   # - conda-prefix: a conda environment given by CONDA_PREFIX
   discovery:
     name: discovery:${{ matrix.source }}/ruby-${{ matrix.ruby }}
@@ -74,7 +75,7 @@ jobs:
         - "3.3"
         source:
         - registry-pythoncore
-        - registry-anaconda
+        - registry-miniconda
         - conda-prefix
 
     defaults:
@@ -95,22 +96,36 @@ jobs:
     - run: rake compile
 
     - uses: actions/setup-python@v7
+      id: setup-python
       if: matrix.source == 'registry-pythoncore'
       with:
         python-version: 3.x
 
-    - name: Expect Python registered under PythonCore
+    - name: Leave only the Python of setup-python registered
       if: matrix.source == 'registry-pythoncore'
       run: |
-        $prefixes = Get-ChildItem HKCU:\Software\Python\PythonCore, HKLM:\SOFTWARE\Python\PythonCore -ErrorAction SilentlyContinue |
-          ForEach-Object { (Get-ItemProperty -LiteralPath "$($_.PSPath)\InstallPath" -ErrorAction SilentlyContinue).'(default)' } |
-          Where-Object { $_ }
-        if (-not $prefixes) { throw 'No Python is registered under PythonCore' }
-        Write-Host "Registered: $($prefixes -join ', ')"
-        "EXPECTED_PYTHON_PREFIXES=$($prefixes -join ';')" >> $env:GITHUB_ENV
+        $python = '${{ steps.setup-python.outputs.python-path }}'
+        $prefix = & $python -c "import sys; print(sys.prefix)"
+        & $python -m pip install numpy
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        # The runner image registers every Python in its tool cache, so remove the others.
+        Remove-Item -Recurse -Force HKLM:\SOFTWARE\WOW6432Node\Python -ErrorAction SilentlyContinue
+        $found = $false
+        foreach ($key in @(Get-ChildItem HKCU:\Software\Python\PythonCore, HKLM:\SOFTWARE\Python\PythonCore -ErrorAction SilentlyContinue)) {
+          $installPath = (Get-ItemProperty -LiteralPath "$($key.PSPath)\InstallPath" -ErrorAction SilentlyContinue).'(default)'
+          if ($installPath -and $installPath.TrimEnd('\') -ieq $prefix.TrimEnd('\')) {
+            Write-Host "Keep $($key.Name): $installPath"
+            $found = $true
+          } else {
+            Write-Host "Remove $($key.Name): $installPath"
+            Remove-Item -Recurse -Force -LiteralPath $key.PSPath
+          }
+        }
+        if (-not $found) { throw "$prefix is not registered under PythonCore" }
+        "EXPECTED_PYTHON_PREFIX=$prefix" >> $env:GITHUB_ENV
 
     - name: Install Miniconda registered as the system Python
-      if: matrix.source == 'registry-anaconda'
+      if: matrix.source == 'registry-miniconda'
       run: |
         # Remove the registrations of the runner image, so that only Miniconda is registered.
         Remove-Item -Recurse -Force HKLM:\SOFTWARE\Python, HKLM:\SOFTWARE\WOW6432Node\Python, HKCU:\Software\Python -ErrorAction SilentlyContinue
@@ -118,8 +133,10 @@ jobs:
         $prefix = Join-Path $env:RUNNER_TEMP miniconda3
         Invoke-WebRequest https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe -OutFile $installer
         Start-Process -Wait -FilePath $installer -ArgumentList '/S', '/InstallationType=JustMe', '/RegisterPython=1', '/AddToPath=0', "/D=$prefix"
+        & (Join-Path $prefix python.exe) -m pip install numpy
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
         reg query HKCU\Software\Python /s
-        "EXPECTED_PYTHON_PREFIXES=$prefix" >> $env:GITHUB_ENV
+        "EXPECTED_PYTHON_PREFIX=$prefix" >> $env:GITHUB_ENV
 
     - uses: conda-incubator/setup-miniconda@v4
       if: matrix.source == 'conda-prefix'
@@ -134,7 +151,7 @@ jobs:
       run: |
         conda install -y numpy
         $prefix = python -c "import sys; print(sys.prefix)"
-        "EXPECTED_PYTHON_PREFIXES=$prefix" >> $env:GITHUB_ENV
+        "EXPECTED_PYTHON_PREFIX=$prefix" >> $env:GITHUB_ENV
         "PYCALL_TEST_CONDA_PREFIX=$prefix" >> $env:GITHUB_ENV
 
     - name: Find Python that is not on PATH
@@ -153,9 +170,9 @@ jobs:
         puts PyCall::PYTHON_DESCRIPTION
         prefix = PyCall.sys.prefix
         puts "sys.prefix: #{prefix}"
-        expected = ENV['EXPECTED_PYTHON_PREFIXES'].split(';')
-        unless expected.any? {|path| File.identical?(path, prefix) }
-          abort "Expected Python in #{expected.join(' or ')}, but used #{prefix}"
+        expected = ENV.fetch('EXPECTED_PYTHON_PREFIX')
+        unless File.identical?(expected, prefix)
+          abort "Expected Python in #{expected}, but used #{prefix}"
         end
         # These load DLLs that are next to python3XX.dll, or in Library\bin of conda.
         %w[ctypes ssl sqlite3].each {|name| PyCall.import_module(name) }
