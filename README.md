@@ -79,6 +79,16 @@ Pycall.rb maps the callable attribute of an object to the instance method of the
 
 But, unfortunately, this mapping prohibits us to get the callable attributes.  We need to write `PyCall.getattr(obj, :meth)` in Ruby to get `obj.meth` object while we can write `obj.meth` in Python.
 
+When no argument is given, pycall.rb calls the attribute only if it is a routine, such as a function, a method, a builtin function, a Cython function, or a `functools.partial` object (roughly what Python's `inspect.isroutine()` accepts).  Other callable objects, such as instances of a class that defines `__call__`, are returned without being called.  For example, `scipy.stats.norm` is such an object, so the following code works as in Python:
+
+```ruby
+stats = PyCall.import_module('scipy.stats')
+stats.norm.pdf([1, 2, 3], 0, 10)  # stats.norm is not called here
+stats.norm(0, 10).pdf([1, 2, 3])  # stats.norm is called with the given arguments
+```
+
+To call such an object without arguments, write `obj.attr.()` (or `obj.attr.call`).
+
 ### Specifying the Python version
 
 If you want to use a specific version of Python instead of the default,
