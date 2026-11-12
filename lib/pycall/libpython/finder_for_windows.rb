@@ -22,11 +22,8 @@ module PyCall
       PYTHON_REGISTRY_KEY = -'Software\Python'
 
       # PEP 514 has companies register side by side.  Prefer the reference
-      # implementation like the py launcher does, then Anaconda.
-      PYTHON_REGISTRY_COMPANIES = [
-        -'PythonCore',
-        -'ContinuumAnalytics',
-      ].freeze
+      # implementation like the py launcher does.
+      PYTHON_REGISTRY_PREFERRED_COMPANY = -'PythonCore'
 
       DEFAULT_SHLIB_SUFFIX = -'.dll'
 
@@ -237,7 +234,7 @@ module PyCall
         end
 
         def registry_company_rank(install)
-          PYTHON_REGISTRY_COMPANIES.index(install[:company]) || PYTHON_REGISTRY_COMPANIES.size
+          install[:company] == PYTHON_REGISTRY_PREFERRED_COMPANY ? 0 : 1
         end
 
         # Sorts newer versions first.
@@ -267,7 +264,7 @@ module PyCall
 
         def add_dll_directory(path)
           debug_report("add_dll_directory(#{path.inspect})")
-          if defined?(RubyInstaller::Runtime) && RubyInstaller::Runtime.respond_to?(:add_dll_directory)
+          if defined?(RubyInstaller::Runtime)
             # RubyInstaller excludes PATH from the DLL search.
             RubyInstaller::Runtime.add_dll_directory(path)
           else
@@ -281,7 +278,7 @@ module PyCall
         end
 
         def debug?
-          @debug ||= (ENV['PYCALL_DEBUG_FIND_LIBPYTHON'] == '1')
+          ENV['PYCALL_DEBUG_FIND_LIBPYTHON'] == '1'
         end
       end
     end
