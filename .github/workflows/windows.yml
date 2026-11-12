@@ -173,6 +173,17 @@ jobs:
       with:
         fetch-depth: 1
 
+    - uses: ruby/setup-ruby@v1
+      if: matrix.ruby_version != 'master-nightly'
+      with:
+        ruby-version: ${{ matrix.ruby }}
+
+    # Build before conda is activated.  The activated environment comes first
+    # in PATH, and the compiler of MSYS2 failed there with conda-forge packages.
+    - run: bundle install
+
+    - run: rake compile
+
     - uses: conda-incubator/setup-miniconda@v4
       with:
         miniforge-version: latest
@@ -183,20 +194,11 @@ jobs:
     - run: set
       shell: cmd
 
-    - uses: ruby/setup-ruby@v1
-      if: matrix.ruby_version != 'master-nightly'
-      with:
-        ruby-version: ${{ matrix.ruby }}
-
     - run: conda install numpy
 
     - run: python -c 'import numpy; print(numpy)'
 
     - run: python -c 'import os; print(os.environ)'
-
-    - run: bundle install
-
-    - run: rake compile
 
     - run: python lib/pycall/python/investigator.py
 
