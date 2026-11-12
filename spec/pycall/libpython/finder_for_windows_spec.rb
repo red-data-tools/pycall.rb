@@ -3,8 +3,7 @@ require 'fileutils'
 require 'tmpdir'
 
 # Finding Python outside of PATH and loading its DLL are tested with real
-# installations by the discovery job of the Windows workflow.  These cover
-# what that job cannot set up.
+# installations by the Windows workflow.  These cover what it cannot set up.
 module PyCall
   module LibPython
     ::RSpec.describe FinderForWindows, if: Fiddle::WINDOWS do
