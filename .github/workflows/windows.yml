@@ -178,8 +178,9 @@ jobs:
       with:
         ruby-version: ${{ matrix.ruby }}
 
-    # Build before conda is activated.  The activated environment comes first
-    # in PATH, and the compiler of MSYS2 failed there with conda-forge packages.
+    # Build before conda is activated, and do not build after that.  The
+    # activated environment comes first in PATH, and the compiler of MSYS2
+    # fails there with conda-forge packages.
     - run: bundle install
 
     - run: rake compile
@@ -208,9 +209,12 @@ jobs:
       env:
         PYTHON: python
 
+    # Not rake, which runs extconf.rb again.
     - run: |
         echo $env:PATH
-        rake
+        ruby test/run-test.rb
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        ruby -Iext/pycall -S rspec
       env:
         PYTHON: python
         CONDA_DLL_SEARCH_MODIFICATION_ENABLE: 1
