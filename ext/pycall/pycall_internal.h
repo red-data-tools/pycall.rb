@@ -565,6 +565,7 @@ typedef struct {
 
   PyObject *PyExc_RuntimeError;
   PyObject *PyExc_TypeError;
+  PyObject *PyExc_ValueError;
 
   void (* Py_InitializeEx)(int);
   int (* Py_IsInitialized)();

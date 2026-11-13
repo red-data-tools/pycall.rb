@@ -230,4 +230,5 @@ pycall_init_exceptions(VALUE libpython_handle)
 
   INIT_API_TABLE_ENTRY_PTR(PyExc_RuntimeError, required);
   INIT_API_TABLE_ENTRY_PTR(PyExc_TypeError, required);
+  INIT_API_TABLE_ENTRY_PTR(PyExc_ValueError, required);
 }

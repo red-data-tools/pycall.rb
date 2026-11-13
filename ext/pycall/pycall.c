@@ -1514,22 +1514,114 @@ pycall_libpython_helpers_m_dict_contains(VALUE mod, VALUE pyptr, VALUE key)
   return res ? Qtrue : Qfalse;
 }
 
+/* Python references held while iterating a dict subclass's items().
+ * The ensure function releases whatever is still held, so a Ruby exception
+ * raised while converting a key or value (e.g. by a type mapping's
+ * wrap_pyptr) does not leak them. */
+struct dict_items_each_state {
+  PyObject *iter;      /* iterator over obj.items() */
+  PyObject *item;      /* current item */
+  PyObject *item_iter; /* iterator used to unpack an item other than an exact tuple or list */
+  PyObject *key;
+  PyObject *value;
+};
+
+static void
+dict_items_each_state_clear(PyObject **pyobj_ptr)
+{
+  if (*pyobj_ptr) {
+    PyObject *pyobj = *pyobj_ptr;
+    *pyobj_ptr = NULL;
+    pycall_Py_DecRef(pyobj);
+  }
+}
+
+static void
+dict_items_each_state_clear_item(struct dict_items_each_state *state)
+{
+  dict_items_each_state_clear(&state->key);
+  dict_items_each_state_clear(&state->value);
+  dict_items_each_state_clear(&state->item_iter);
+  dict_items_each_state_clear(&state->item);
+}
+
+/* Unpack state->item into state->key and state->value (new references) as
+ * Python's `k, v = item` does: an exact tuple or list is unpacked directly,
+ * and any other iterable (including subclasses of tuple and list, which may
+ * override __iter__) must yield exactly two elements.  Returns -1 with a
+ * Python error set on failure. */
+static int
+dict_items_each_unpack_item(struct dict_items_each_state *state)
+{
+  PyObject *pyobj_item = state->item, *pyobj_extra;
+  int is_tuple = Py_TYPE(pyobj_item) == Py_API(PyTuple_Type);
+
+  if (is_tuple || Py_TYPE(pyobj_item) == Py_API(PyList_Type)) {
+    Py_ssize_t n = is_tuple ? Py_API(PyTuple_Size)(pyobj_item) : Py_API(PyList_Size)(pyobj_item);
+    if (n == 2) {
+      state->key = is_tuple ? Py_API(PyTuple_GetItem)(pyobj_item, 0) : Py_API(PyList_GetItem)(pyobj_item, 0);
+      Py_API(Py_IncRef)(state->key);
+      state->value = is_tuple ? Py_API(PyTuple_GetItem)(pyobj_item, 1) : Py_API(PyList_GetItem)(pyobj_item, 1);
+      Py_API(Py_IncRef)(state->value);
+      return 0;
+    }
+    if (n < 2)
+      Py_API(PyErr_Format)(Py_API(PyExc_ValueError), "not enough values to unpack (expected 2, got %zd)", n);
+    else
+      Py_API(PyErr_Format)(Py_API(PyExc_ValueError), "too many values to unpack (expected 2, got %zd)", n);
+    return -1;
+  }
+
+  state->item_iter = Py_API(PyObject_GetIter)(pyobj_item);
+  if (!state->item_iter) {
+    if (Py_TYPE(pyobj_item)->tp_iter == NULL && !Py_API(PySequence_Check)(pyobj_item)) {
+      Py_API(PyErr_Clear)();
+      Py_API(PyErr_Format)(Py_API(PyExc_TypeError), "cannot unpack non-iterable %.200s object", Py_TYPE(pyobj_item)->tp_name);
+    }
+    return -1;
+  }
+
+  state->key = Py_API(PyIter_Next)(state->item_iter);
+  if (!state->key) {
+    if (!Py_API(PyErr_Occurred)())
+      Py_API(PyErr_Format)(Py_API(PyExc_ValueError), "not enough values to unpack (expected 2, got 0)");
+    return -1;
+  }
+
+  state->value = Py_API(PyIter_Next)(state->item_iter);
+  if (!state->value) {
+    if (!Py_API(PyErr_Occurred)())
+      Py_API(PyErr_Format)(Py_API(PyExc_ValueError), "not enough values to unpack (expected 2, got 1)");
+    return -1;
+  }
+
+  pyobj_extra = Py_API(PyIter_Next)(state->item_iter);
+  if (pyobj_extra) {
+    pycall_Py_DecRef(pyobj_extra);
+    Py_API(PyErr_Format)(Py_API(PyExc_ValueError), "too many values to unpack (expected 2)");
+    return -1;
+  }
+  if (Py_API(PyErr_Occurred)())
+    return -1;
+
+  dict_items_each_state_clear(&state->item_iter);
+  return 0;
+}
+
 static VALUE
 pycall_dict_items_each_body(VALUE arg)
 {
-  PyObject *pyobj_iter = (PyObject *)arg, *pyobj_item;
+  struct dict_items_each_state *state = (struct dict_items_each_state *)arg;
 
-  while ((pyobj_item = Py_API(PyIter_Next)(pyobj_iter))) {
+  while ((state->item = Py_API(PyIter_Next)(state->iter))) {
     VALUE key, value;
-    if (!PyType_FastSubclass(Py_TYPE(pyobj_item), Py_TPFLAGS_TUPLE_SUBCLASS) ||
-        Py_API(PyTuple_Size)(pyobj_item) != 2) {
-      VALUE msg = rb_sprintf("unexpected Python type %s in items() (expected a 2-tuple)", Py_TYPE(pyobj_item)->tp_name);
-      pycall_Py_DecRef(pyobj_item);
-      rb_exc_raise(rb_exc_new_str(rb_eTypeError, msg));
+
+    if (dict_items_each_unpack_item(state) < 0) {
+      pycall_pyerror_fetch_and_raise("unpacking an item in pycall_libpython_helpers_m_dict_each");
     }
-    key = pycall_pyobject_to_ruby(Py_API(PyTuple_GetItem)(pyobj_item, 0));
-    value = pycall_pyobject_to_ruby(Py_API(PyTuple_GetItem)(pyobj_item, 1));
-    pycall_Py_DecRef(pyobj_item);
+    key = pycall_pyobject_to_ruby(state->key);
+    value = pycall_pyobject_to_ruby(state->value);
+    dict_items_each_state_clear_item(state);
     rb_yield(rb_assoc_new(key, value));
   }
 
@@ -1543,7 +1635,9 @@ pycall_dict_items_each_body(VALUE arg)
 static VALUE
 pycall_dict_items_each_ensure(VALUE arg)
 {
-  pycall_Py_DecRef((PyObject *)arg);
+  struct dict_items_each_state *state = (struct dict_items_each_state *)arg;
+  dict_items_each_state_clear_item(state);
+  dict_items_each_state_clear(&state->iter);
   return Qnil;
 }
 
@@ -1561,20 +1655,21 @@ pycall_libpython_helpers_m_dict_each(VALUE mod, VALUE pyptr)
     /* A dict subclass may override items(), __iter__, or keep its own order
      * (e.g. OrderedDict.move_to_end), which PyDict_Next would bypass.
      * Iterate like Python's `for k, v in obj.items()` instead. */
-    PyObject *pyobj_items, *pyobj_iter;
+    PyObject *pyobj_items;
+    struct dict_items_each_state state = { NULL, NULL, NULL, NULL, NULL };
 
     pyobj_items = Py_API(PyObject_CallMethod)(pyobj, "items", "");
     if (!pyobj_items) {
       pycall_pyerror_fetch_and_raise("PyObject_CallMethod(items) in pycall_libpython_helpers_m_dict_each");
     }
-    pyobj_iter = Py_API(PyObject_GetIter)(pyobj_items);
+    state.iter = Py_API(PyObject_GetIter)(pyobj_items);
     pycall_Py_DecRef(pyobj_items);
-    if (!pyobj_iter) {
+    if (!state.iter) {
       pycall_pyerror_fetch_and_raise("PyObject_GetIter in pycall_libpython_helpers_m_dict_each");
     }
 
-    rb_ensure(pycall_dict_items_each_body, (VALUE)pyobj_iter,
-              pycall_dict_items_each_ensure, (VALUE)pyobj_iter);
+    rb_ensure(pycall_dict_items_each_body, (VALUE)&state,
+              pycall_dict_items_each_ensure, (VALUE)&state);
     return Qnil;
   }
 

@@ -183,11 +183,72 @@ module PyCall
         end
       end
 
-      context 'whose items() does not return pairs' do
-        subject(:dict) { helper.BadItemsDict.new(Dict.new('a' => 1)) }
+      context 'whose items() yields pairs other than tuples' do
+        ['list pairs', 'iterator pairs', 'tuple subclass pairs'].each do |kind|
+          specify "#each unpacks #{kind} like Python" do
+            dict = helper.pairs_dict(kind)
+            expect(dict.each.to_a).to eq([['a', 1], ['b', 2]])
+          end
+        end
+      end
 
-        it 'raises TypeError' do
-          expect { subject.each {} }.to raise_error(TypeError, /expected a 2-tuple/)
+      context 'whose items() yields items that cannot be unpacked into two' do
+        {
+          'too few in tuple' => /ValueError.*not enough values to unpack \(expected 2, got 1\)/,
+          'too many in tuple' => /ValueError.*too many values to unpack \(expected 2, got 3\)/,
+          'too few in list' => /ValueError.*not enough values to unpack \(expected 2, got 1\)/,
+          'too many in list' => /ValueError.*too many values to unpack \(expected 2, got 3\)/,
+          'empty iterator' => /ValueError.*not enough values to unpack \(expected 2, got 0\)/,
+          'too few in iterator' => /ValueError.*not enough values to unpack \(expected 2, got 1\)/,
+          'too many in iterator' => /ValueError.*too many values to unpack \(expected 2\)/,
+          'non-iterable' => /TypeError.*cannot unpack non-iterable int object/,
+        }.each do |kind, message|
+          specify "#each raises PyCall::PyError for #{kind}" do
+            dict = helper.pairs_dict(kind)
+            expect { dict.each {} }.to raise_error(PyCall::PyError, message)
+          end
+        end
+      end
+
+      context 'when converting a key or value raises a Ruby exception' do
+        let(:unconvertible_type) { helper.Unconvertible.__pyptr__ }
+        let(:conversion_error) { Class.new(StandardError) }
+
+        before do
+          error = conversion_error
+          pytype = unconvertible_type
+          raising_class = Class.new do |cls|
+            cls.instance_variable_set(:@__pyptr__, pytype)
+            cls.extend PyTypeObjectWrapper
+            cls.define_singleton_method(:wrap_pyptr) { |*| raise error }
+          end
+          Conversion.register_python_type_mapping(unconvertible_type, raising_class)
+        end
+
+        after do
+          Conversion.unregister_python_type_mapping(unconvertible_type)
+        end
+
+        %w[tuple list].each do |container|
+          context "for a #{container} item" do
+            it 'releases the item and the unconverted value when the key fails' do
+              dict = helper.retained_pair_dict(container, 'key')
+              before_counts = helper.pair_refcounts(dict).to_a
+              3.times do
+                expect { dict.each {} }.to raise_error(conversion_error)
+              end
+              expect(helper.pair_refcounts(dict).to_a).to eq(before_counts)
+            end
+
+            it 'releases the item when the value fails' do
+              dict = helper.retained_pair_dict(container, 'value')
+              before_count = helper.pair_refcounts(dict).to_a[0]
+              3.times do
+                expect { dict.each {} }.to raise_error(conversion_error)
+              end
+              expect(helper.pair_refcounts(dict).to_a[0]).to eq(before_count)
+            end
+          end
         end
       end
 
