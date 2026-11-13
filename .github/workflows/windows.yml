@@ -59,6 +59,98 @@ jobs:
       env:
         PYTHON: python
 
+    # The runner image registers the Pythons in its tool cache under
+    # Software\Python\PythonCore.  The newest one is found, which may not have
+    # numpy, so only standard libraries are imported.
+    - name: Find Python in the registry
+      shell: pwsh
+      run: |
+        # Hide every python.exe on PATH, so that PyCall has to find Python by itself.
+        $env:PATH = ($env:PATH -split ';' | Where-Object {
+          $_ -and -not (Test-Path (Join-Path $_ python.exe)) -and -not (Test-Path (Join-Path $_ python3.exe))
+        }) -join ';'
+        if (Get-Command python, python3 -ErrorAction SilentlyContinue) { throw 'Python is still on PATH' }
+        Remove-Item Env:PYTHON -ErrorAction SilentlyContinue
+        @'
+        require 'pycall'
+        puts PyCall.sys.prefix
+        # These load DLLs that are next to python3XX.dll.
+        %w[ctypes ssl sqlite3].each {|name| PyCall.import_module(name) }
+        '@ | ruby -Ilib -Iext/pycall
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      env:
+        PYCALL_DEBUG_FIND_LIBPYTHON: 1
+
+  # Miniforge installed with /RegisterPython=1 registers itself under
+  # Software\Python\PythonCore.  PyCall has to find it there when it is the
+  # only Python registered and nothing is on PATH.
+  registry:
+    name: registry:miniforge/ruby-${{ matrix.ruby }}
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby:
+        - "3.3"
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 1
+
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ matrix.ruby }}
+
+    - run: bundle install
+
+    - run: rake compile
+
+    - name: Install Miniforge registered as the system Python
+      run: |
+        # Remove the registrations of the runner image, so that only Miniforge is registered.
+        Remove-Item -Recurse -Force HKLM:\SOFTWARE\Python, HKLM:\SOFTWARE\WOW6432Node\Python, HKCU:\Software\Python -ErrorAction SilentlyContinue
+        $installer = Join-Path $env:RUNNER_TEMP miniforge.exe
+        $prefix = Join-Path $env:RUNNER_TEMP miniforge3
+        Invoke-WebRequest https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe -OutFile $installer
+        Start-Process -Wait -FilePath $installer -ArgumentList '/S', '/InstallationType=JustMe', '/RegisterPython=1', '/AddToPath=0', "/D=$prefix"
+        & (Join-Path $prefix python.exe) -m pip install numpy
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        reg query HKCU\Software\Python /s
+        "EXPECTED_PYTHON_PREFIX=$prefix" >> $env:GITHUB_ENV
+
+    - name: Find Python in the registry
+      run: |
+        # Hide every python.exe on PATH, so that PyCall has to find Python by itself.
+        $env:PATH = ($env:PATH -split ';' | Where-Object {
+          $_ -and -not (Test-Path (Join-Path $_ python.exe)) -and -not (Test-Path (Join-Path $_ python3.exe))
+        }) -join ';'
+        if (Get-Command python, python3 -ErrorAction SilentlyContinue) { throw 'Python is still on PATH' }
+        Remove-Item Env:PYTHON -ErrorAction SilentlyContinue
+        @'
+        require 'pycall'
+        prefix = PyCall.sys.prefix
+        puts prefix
+        expected = ENV.fetch('EXPECTED_PYTHON_PREFIX')
+        abort "Expected Python in #{expected}, but used #{prefix}" unless File.identical?(prefix, expected)
+        # These load DLLs that are next to python3XX.dll, or in Library\bin of conda.
+        %w[ctypes ssl sqlite3 numpy].each {|name| PyCall.import_module(name) }
+        '@ | ruby -Ilib -Iext/pycall
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+        # No other job runs the suites with the Python found by PyCall itself.
+        # finder_spec.rb runs python on PATH.
+        ruby -Iext/pycall -S rspec --exclude-pattern spec/pycall/libpython/finder_spec.rb
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        ruby test/run-test.rb
+      env:
+        PYCALL_DEBUG_FIND_LIBPYTHON: 1
+
   conda:
     name: conda:ruby-${{ matrix. ruby }}/python-${{ matrix.python }}
     runs-on: windows-latest
@@ -81,33 +173,33 @@ jobs:
       with:
         fetch-depth: 1
 
-    - uses: conda-incubator/setup-miniconda@v4
-      with:
-        activate-environment: test
-        python-version: ${{ matrix.python }}
-
-    - run: set
-      shell: cmd
-
-    - name: Add conda's DLL path
-      run: |
-        echo $env:CONDA\Library\bin >> $GITHUB_PATH
-        echo $env:CONDA_PREFIX\Library\bin >> $GITHUB_PATH
-
     - uses: ruby/setup-ruby@v1
       if: matrix.ruby_version != 'master-nightly'
       with:
         ruby-version: ${{ matrix.ruby }}
+
+    # Build before conda is activated, and do not build after that.  The
+    # activated environment comes first in PATH, and the compiler of MSYS2
+    # fails there with conda-forge packages.
+    - run: bundle install
+
+    - run: rake compile
+
+    - uses: conda-incubator/setup-miniconda@v4
+      with:
+        miniforge-version: latest
+        activate-environment: test
+        python-version: ${{ matrix.python }}
+        conda-remove-defaults: true
+
+    - run: set
+      shell: cmd
 
     - run: conda install numpy
 
     - run: python -c 'import numpy; print(numpy)'
 
     - run: python -c 'import os; print(os.environ)'
-
-    - run: bundle install
-
-    - run: rake compile
 
     - run: python lib/pycall/python/investigator.py
 
@@ -116,12 +208,34 @@ jobs:
         ruby -Ilib -Iext/pycall -rpycall -e "PyCall.import_module(:numpy)"
       env:
         PYTHON: python
-      continue-on-error: true
 
+    # Not rake, which runs extconf.rb again.
     - run: |
         echo $env:PATH
-        rake
+        ruby test/run-test.rb
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        ruby -Iext/pycall -S rspec
       env:
         PYTHON: python
         CONDA_DLL_SEARCH_MODIFICATION_ENABLE: 1
-      continue-on-error: true
+
+    # setup-miniconda sets CONDA_PREFIX to the activated environment.
+    - name: Find Python in CONDA_PREFIX
+      run: |
+        # Hide every python.exe on PATH, so that PyCall has to find Python by itself.
+        $env:PATH = ($env:PATH -split ';' | Where-Object {
+          $_ -and -not (Test-Path (Join-Path $_ python.exe)) -and -not (Test-Path (Join-Path $_ python3.exe))
+        }) -join ';'
+        if (Get-Command python, python3 -ErrorAction SilentlyContinue) { throw 'Python is still on PATH' }
+        Remove-Item Env:PYTHON -ErrorAction SilentlyContinue
+        @'
+        require 'pycall'
+        prefix = PyCall.sys.prefix
+        puts prefix
+        abort "Unexpected Python: #{prefix}" unless File.identical?(prefix, ENV['CONDA_PREFIX'])
+        # These load DLLs that are next to python3XX.dll, or in Library\bin of conda.
+        %w[ctypes ssl sqlite3 numpy].each {|name| PyCall.import_module(name) }
+        '@ | ruby -Ilib -Iext/pycall
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      env:
+        PYCALL_DEBUG_FIND_LIBPYTHON: 1

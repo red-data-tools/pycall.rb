@@ -1,4 +1,5 @@
 require 'pycall/error'
+require 'pycall/libpython/finder_for_windows'
 require 'fiddle'
 require 'pathname'
 
@@ -38,6 +39,8 @@ module PyCall
         end
 
         def find_libpython(python = nil)
+          return FinderForWindows.find_libpython(python) if windows?
+
           debug_report("find_libpython(#{python.inspect})")
           python, python_config = find_python_config(python)
           suffix = python_config[:SHLIB_SUFFIX]
