@@ -568,6 +568,7 @@ typedef struct {
   PyObject *PyExc_ValueError;
 
   void (* Py_InitializeEx)(int);
+  int (* Py_FinalizeEx)(void);
   int (* Py_IsInitialized)();
   char const * (* Py_GetVersion)();
 
