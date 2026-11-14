@@ -104,5 +104,174 @@ module PyCall
       subject { dict.length }
       it { is_expected.to eq(3) }
     end
+
+    describe '#each' do
+      it 'yields each key-value pair' do
+        expect { |b| subject.each(&b) }.to yield_successive_args(['a', 1], ['b', 2], ['c', 3])
+      end
+
+      it 'returns an enumerator without a block' do
+        expect(subject.each.to_a).to eq([['a', 1], ['b', 2], ['c', 3]])
+      end
+    end
+
+    describe '#to_h' do
+      it 'returns a Hash' do
+        expect(subject.to_h).to eq('a' => 1, 'b' => 2, 'c' => 3)
+      end
+    end
+
+    context 'for an instance of a subclass of dict' do
+      let(:helper) { PyCall.import_module('pycall.dict_subclass') }
+      let(:collections) { PyCall.import_module('collections') }
+
+      context 'that overrides nothing (like pandas PrettyDict, issue #131)' do
+        subject(:dict) { helper.PlainDictSubclass.new(Dict.new('a' => 1, 'b' => 2)) }
+
+        it 'is wrapped as PyCall::Dict' do
+          expect(subject).to be_a(Dict)
+        end
+
+        specify '#each yields each key-value pair' do
+          expect { |b| subject.each(&b) }.to yield_successive_args(['a', 1], ['b', 2])
+        end
+
+        specify '#to_h returns a Hash' do
+          expect(subject.to_h).to eq('a' => 1, 'b' => 2)
+        end
+
+        specify '#has_key?' do
+          expect(subject).to have_key('a')
+          expect(subject).not_to have_key('z')
+        end
+      end
+
+      context 'collections.OrderedDict' do
+        subject(:dict) { helper.moved_ordered_dict() }
+
+        it 'iterates in the OrderedDict order' do
+          expect(subject.each.to_a).to eq([['b', 2], ['c', 3], ['a', 1]])
+          expect(subject.to_h.keys).to eq(%w[b c a])
+        end
+      end
+
+      context 'collections.defaultdict' do
+        subject(:dict) { collections.defaultdict.new(PyCall.builtins.int, Dict.new('a' => 1)) }
+
+        it 'does not add a missing key via #has_key?' do
+          expect(subject).not_to have_key('z')
+          expect(subject.to_h).to eq('a' => 1)
+        end
+      end
+
+      context 'collections.Counter' do
+        subject(:dict) { collections.Counter.new(%w[x y x]) }
+
+        specify do
+          expect(subject.to_h).to eq('x' => 2, 'y' => 1)
+          expect(subject).to have_key('x')
+        end
+      end
+
+      context 'that overrides items, __iter__, and __contains__' do
+        subject(:dict) { helper.VirtualItemsDict.new(Dict.new('a' => 1)) }
+
+        it 'uses the overridden methods like Python does' do
+          expect(subject.each.to_a).to eq([['virtual', 42]])
+          expect(subject).to have_key('virtual')
+          expect(subject).not_to have_key('a')
+        end
+      end
+
+      context 'whose items() yields pairs other than tuples' do
+        ['list pairs', 'iterator pairs', 'tuple subclass pairs'].each do |kind|
+          specify "#each unpacks #{kind} like Python" do
+            dict = helper.pairs_dict(kind)
+            expect(dict.each.to_a).to eq([['a', 1], ['b', 2]])
+          end
+        end
+      end
+
+      context 'whose items() yields items that cannot be unpacked into two' do
+        {
+          'too few in tuple' => /ValueError.*not enough values to unpack \(expected 2, got 1\)/,
+          'too many in tuple' => /ValueError.*too many values to unpack \(expected 2, got 3\)/,
+          'too few in list' => /ValueError.*not enough values to unpack \(expected 2, got 1\)/,
+          'too many in list' => /ValueError.*too many values to unpack \(expected 2, got 3\)/,
+          'empty iterator' => /ValueError.*not enough values to unpack \(expected 2, got 0\)/,
+          'too few in iterator' => /ValueError.*not enough values to unpack \(expected 2, got 1\)/,
+          'too many in iterator' => /ValueError.*too many values to unpack \(expected 2\)/,
+          'non-iterable' => /TypeError.*cannot unpack non-iterable int object/,
+        }.each do |kind, message|
+          specify "#each raises PyCall::PyError for #{kind}" do
+            dict = helper.pairs_dict(kind)
+            expect { dict.each {} }.to raise_error(PyCall::PyError, message)
+          end
+        end
+      end
+
+      context 'when converting a key or value raises a Ruby exception' do
+        let(:unconvertible_type) { helper.Unconvertible.__pyptr__ }
+        let(:conversion_error) { Class.new(StandardError) }
+
+        before do
+          error = conversion_error
+          pytype = unconvertible_type
+          raising_class = Class.new do |cls|
+            cls.instance_variable_set(:@__pyptr__, pytype)
+            cls.extend PyTypeObjectWrapper
+            cls.define_singleton_method(:wrap_pyptr) { |*| raise error }
+          end
+          Conversion.register_python_type_mapping(unconvertible_type, raising_class)
+        end
+
+        after do
+          Conversion.unregister_python_type_mapping(unconvertible_type)
+        end
+
+        %w[tuple list].each do |container|
+          context "for a #{container} item" do
+            it 'releases the item and the unconverted value when the key fails' do
+              dict = helper.retained_pair_dict(container, 'key')
+              before_counts = helper.pair_refcounts(dict).to_a
+              3.times do
+                expect { dict.each {} }.to raise_error(conversion_error)
+              end
+              expect(helper.pair_refcounts(dict).to_a).to eq(before_counts)
+            end
+
+            it 'releases the item when the value fails' do
+              dict = helper.retained_pair_dict(container, 'value')
+              before_count = helper.pair_refcounts(dict).to_a[0]
+              3.times do
+                expect { dict.each {} }.to raise_error(conversion_error)
+              end
+              expect(helper.pair_refcounts(dict).to_a[0]).to eq(before_count)
+            end
+
+            it 'releases the converted key when the value fails' do
+              dict = PyCall.eval(
+                "PairsDict([#{container}(['k' * 10000, Unconvertible()])])",
+                globals: helper.__dict__
+              )
+              key_refcount = PyCall.eval(
+                'lambda d: sys.getrefcount(d.pairs[0][0])',
+                globals: helper.__dict__
+              )
+              before_count = key_refcount.call(dict)
+              3.times do
+                expect { dict.each {} }.to raise_error(conversion_error)
+              end
+              expect(key_refcount.call(dict)).to eq(before_count)
+            end
+          end
+        end
+      end
+
+      it 'can break out of #each' do
+        dict = helper.PlainDictSubclass.new(Dict.new('a' => 1, 'b' => 2))
+        expect(dict.each { |k, v| break k }).to eq('a')
+      end
+    end
   end
 end
