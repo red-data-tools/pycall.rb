@@ -248,6 +248,22 @@ module PyCall
               end
               expect(helper.pair_refcounts(dict).to_a[0]).to eq(before_count)
             end
+
+            it 'releases the converted key when the value fails' do
+              dict = PyCall.eval(
+                "PairsDict([#{container}(['k' * 10000, Unconvertible()])])",
+                globals: helper.__dict__
+              )
+              key_refcount = PyCall.eval(
+                'lambda d: sys.getrefcount(d.pairs[0][0])',
+                globals: helper.__dict__
+              )
+              before_count = key_refcount.call(dict)
+              3.times do
+                expect { dict.each {} }.to raise_error(conversion_error)
+              end
+              expect(key_refcount.call(dict)).to eq(before_count)
+            end
           end
         end
       end
