@@ -6,6 +6,7 @@ module PyCall
   require 'pycall/pytypeobject_wrapper'
   require 'pycall/pymodule_wrapper'
   require 'pycall/iterable_wrapper'
+  require 'pycall/ruby_collection_wrappers'
   require 'pycall/init'
 
   module_function
