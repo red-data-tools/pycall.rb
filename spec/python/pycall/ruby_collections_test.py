@@ -75,3 +75,31 @@ def set_type_of_and(obj, other):
 
 def type_name(obj):
     return type(obj).__name__
+
+
+_OPERATIONS = {
+    "len": lambda obj: len(obj),
+    "getitem": lambda obj, key: obj[key],
+    "contains": lambda obj, item: item in obj,
+    "get": lambda obj, key, default: obj.get(key, default),
+    "list": lambda obj: list(obj),
+    "dict": lambda obj: dict(obj),
+    "eq": lambda obj, other: obj == other,
+    "le": lambda obj, other: obj <= other,
+}
+
+
+def attempt(operation, obj, *args):
+    """Runs an operation and returns its result, or "ExceptionName: message"."""
+    try:
+        return _OPERATIONS[operation](obj, *args)
+    except Exception as e:
+        return "%s: %s" % (type(e).__name__, e)
+
+
+def first_two(obj, between):
+    """Returns the first two items of iter(obj), calling between() after the first."""
+    it = iter(obj)
+    first = next(it)
+    between()
+    return [first, next(it)]

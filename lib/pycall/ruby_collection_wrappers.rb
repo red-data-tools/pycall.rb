@@ -4,51 +4,104 @@ module PyCall
   # Helper methods called from the Python classes in PyCall.ruby_collections.
   #
   # A Ruby exception raised in a Ruby method called from Python is not
-  # propagated to Python, so these methods report a missing element with a
-  # `[found, value]` pair and never raise.
+  # propagated to Python, so each method returns a `[status, value]` pair
+  # instead of raising:
+  #
+  # - OK: the call succeeded, and value is the result.
+  # - MISSING: the index, key, or element was not found.
+  # - ERROR: a StandardError or a NotImplementedError was raised, and value
+  #   is its description.
+  # - COLLISION: a String key or element was looked up while both the String
+  #   and the Symbol with the same name are present, and value describes them.
   module RubyCollectionAccessor
+    OK = 0
+    MISSING = 1
+    ERROR = 2
+    COLLISION = 3
+
     module_function
 
     def collection_length(collection)
-      collection.size
+      guard { [OK, collection.size] }
     end
 
+    # Also used to read the snapshots returned by hash_keys and set_to_a.
     def array_fetch(array, index)
-      return [false, nil] unless index.is_a?(Integer) && 0 <= index && index < array.size
-      [true, array[index]]
+      guard do
+        if index.is_a?(Integer) && 0 <= index && index < array.size
+          [OK, array[index]]
+        else
+          [MISSING, nil]
+        end
+      end
     end
 
-    # A Symbol key is converted to a Python str, so a String key that is not
-    # found is also looked up as a Symbol.
     def hash_fetch(hash, key)
-      return [true, hash[key]] if hash.key?(key)
-      if key.is_a?(String)
-        sym = key.to_sym
-        return [true, hash[sym]] if hash.key?(sym)
+      guard do
+        status, resolved = resolve_key(key) { |k| hash.key?(k) }
+        status == OK ? [OK, hash[resolved]] : [status, resolved]
       end
-      [false, nil]
-    rescue StandardError
-      [false, nil]
     end
 
     def hash_has_key(hash, key)
-      hash_fetch(hash, key)[0]
+      guard do
+        status, resolved = resolve_key(key) { |k| hash.key?(k) }
+        status == OK ? [OK, nil] : [status, resolved]
+      end
     end
 
+    # Returns the keys as an Array wrapped as a Ruby object, so that the
+    # bridge does not convert them to a Python list at once.
     def hash_keys(hash)
-      hash.keys
+      guard { [OK, PyCall.wrap_ruby_object(hash.keys)] }
     end
 
     def set_include(set, item)
-      return true if set.include?(item)
-      item.is_a?(String) && set.include?(item.to_sym)
-    rescue StandardError
-      false
+      guard do
+        status, resolved = resolve_key(item) { |e| set.include?(e) }
+        status == OK ? [OK, nil] : [status, resolved]
+      end
     end
 
+    # Returns the elements as an Array wrapped as a Ruby object, so that the
+    # bridge does not convert them to a Python list at once.
     def set_to_a(set)
-      set.to_a
+      guard { [OK, PyCall.wrap_ruby_object(set.to_a)] }
     end
+
+    # A Symbol is converted to a Python str, so a String that is not found is
+    # also looked up as a Symbol.  When both are present, the lookup is
+    # ambiguous and reported as COLLISION.
+    def resolve_key(key)
+      found = yield(key)
+      sym = symbol_for(key)
+      found_sym = !sym.nil? && yield(sym)
+      if found && found_sym
+        [COLLISION, "both #{key.inspect} and #{sym.inspect} are present, " \
+                    "and both are #{key.inspect} in Python"]
+      elsif found
+        [OK, key]
+      elsif found_sym
+        [OK, sym]
+      else
+        [MISSING, nil]
+      end
+    end
+
+    def symbol_for(key)
+      return nil unless key.is_a?(String)
+      key.to_sym
+    rescue EncodingError
+      nil
+    end
+
+    def guard
+      yield
+    rescue StandardError, NotImplementedError => e
+      [ERROR, "#{e.class}: #{e.message}"]
+    end
+
+    private_class_method :resolve_key, :symbol_for, :guard
   end
 
   module_function
@@ -62,7 +115,7 @@ module PyCall
   #
   # Unlike the automatic conversion to a Python list or dict, the elements
   # are converted when Python accesses them.
-  def wrap_ruby_collection(collection)
+  def wrap_as_python_collection(collection)
     wrapper_class =
       case collection
       when Array then ruby_collections.RubyArray
