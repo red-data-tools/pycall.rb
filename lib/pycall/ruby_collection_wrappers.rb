@@ -53,33 +53,25 @@ module PyCall
 
   module_function
 
-  # Returns a read-only Python view of the given Array that implements
-  # collections.abc.Sequence. Unlike the automatic conversion to a Python
-  # list, the elements are converted when Python accesses them.
-  def wrap_ruby_array(array)
-    unless array.is_a?(Array)
-      raise TypeError, "unexpected argument type #{array.class} (expected Array)"
-    end
-    ruby_collections.RubyArray.(wrap_ruby_object(array))
-  end
-
-  # Returns a read-only Python view of the given Hash that implements
-  # collections.abc.Mapping. Unlike the automatic conversion to a Python
-  # dict, the values are converted when Python accesses them.
-  def wrap_ruby_hash(hash)
-    unless hash.is_a?(Hash)
-      raise TypeError, "unexpected argument type #{hash.class} (expected Hash)"
-    end
-    ruby_collections.RubyHash.(wrap_ruby_object(hash))
-  end
-
-  # Returns a read-only Python view of the given Set that implements
-  # collections.abc.Set.
-  def wrap_ruby_set(set)
-    unless set.is_a?(Set)
-      raise TypeError, "unexpected argument type #{set.class} (expected Set)"
-    end
-    ruby_collections.RubySet.(wrap_ruby_object(set))
+  # Returns a read-only Python view of the given Array, Hash, or Set,
+  # selected by the type of the object:
+  #
+  # - Array: PyCall.ruby_collections.RubyArray (collections.abc.Sequence)
+  # - Hash:  PyCall.ruby_collections.RubyHash (collections.abc.Mapping)
+  # - Set:   PyCall.ruby_collections.RubySet (collections.abc.Set)
+  #
+  # Unlike the automatic conversion to a Python list or dict, the elements
+  # are converted when Python accesses them.
+  def wrap_ruby_collection(collection)
+    wrapper_class =
+      case collection
+      when Array then ruby_collections.RubyArray
+      when Hash then ruby_collections.RubyHash
+      when Set then ruby_collections.RubySet
+      else
+        raise TypeError, "unexpected argument type #{collection.class} (expected Array, Hash, or Set)"
+      end
+    wrapper_class.(wrap_ruby_object(collection))
   end
 
   def ruby_collections

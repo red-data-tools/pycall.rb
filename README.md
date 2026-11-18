@@ -94,10 +94,12 @@ To call such an object without arguments, write `obj.attr.()` (or `obj.attr.call
 When an Array or a Hash is passed to Python, pycall.rb converts it to a Python `list` or `dict`, including all of its elements.  For a large collection that Python only partly reads, you can pass a read-only view instead, which converts each element only when Python accesses it:
 
 ```ruby
-PyCall.wrap_ruby_array(array)  # collections.abc.Sequence
-PyCall.wrap_ruby_hash(hash)    # collections.abc.Mapping
-PyCall.wrap_ruby_set(set)      # collections.abc.Set
+PyCall.wrap_ruby_collection(array)  # RubyArray, a collections.abc.Sequence
+PyCall.wrap_ruby_collection(hash)   # RubyHash, a collections.abc.Mapping
+PyCall.wrap_ruby_collection(set)    # RubySet, a collections.abc.Set
 ```
+
+The view is selected by the type of the object, including subclasses of `Array`, `Hash`, and `Set`.  Any other object raises `TypeError`.
 
 The views reflect later changes of the Ruby object, and `view.ruby_object` gives back the original Ruby object.  They are not instances of `list`, `dict`, or `set`, so some Python code does not accept them; for example, `json.dumps` raises `TypeError`, and `pandas.DataFrame` treats a `Mapping` that is not a `dict` as a sequence of its keys.  Reading every element through a view is also slower than converting the whole collection once.  A Symbol key or element is seen as a `str` in Python, the same as in the default conversion.
 

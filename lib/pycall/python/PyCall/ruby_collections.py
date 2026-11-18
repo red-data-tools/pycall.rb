@@ -5,8 +5,8 @@ The classes in this module implement the ``collections.abc.Sequence``,
 it.  Elements are converted to Python objects with PyCall's usual rules when
 they are accessed, not when the view is created.
 
-Instances are created on the Ruby side by ``PyCall.wrap_ruby_array``,
-``PyCall.wrap_ruby_hash``, and ``PyCall.wrap_ruby_set``.
+Instances are created on the Ruby side by ``PyCall.wrap_ruby_collection``,
+which selects the class by the type of the Ruby object.
 
 They are not subclasses of ``list``, ``dict``, or ``set``.
 """

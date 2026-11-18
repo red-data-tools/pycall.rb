@@ -5,18 +5,34 @@ RSpec.describe PyCall do
   let(:helper) { PyCall.import_module('pycall.ruby_collections_test') }
   let(:builtins) { PyCall.builtins }
 
-  describe '.wrap_ruby_array' do
+  describe '.wrap_ruby_collection' do
+    it 'selects the wrapper by the type of the object' do
+      expect(helper.type_name(PyCall.wrap_ruby_collection([]))).to eq('RubyArray')
+      expect(helper.type_name(PyCall.wrap_ruby_collection({}))).to eq('RubyHash')
+      expect(helper.type_name(PyCall.wrap_ruby_collection(Set[]))).to eq('RubySet')
+    end
+
+    it 'accepts subclasses of Array, Hash, and Set' do
+      expect(helper.type_name(PyCall.wrap_ruby_collection(Class.new(Array).new))).to eq('RubyArray')
+      expect(helper.type_name(PyCall.wrap_ruby_collection(Class.new(Hash).new))).to eq('RubyHash')
+      expect(helper.type_name(PyCall.wrap_ruby_collection(Class.new(Set).new))).to eq('RubySet')
+    end
+
+    it 'raises TypeError for any other object' do
+      [nil, 1, 'x', :y, 1..2, Object.new].each do |obj|
+        expect { PyCall.wrap_ruby_collection(obj) }
+          .to raise_error(TypeError, /expected Array, Hash, or Set/)
+      end
+    end
+  end
+
+  describe '.wrap_ruby_collection with an Array' do
     let(:array) { [1, 'x', :y, [2, 3]] }
-    subject(:wrapper) { PyCall.wrap_ruby_array(array) }
+    subject(:wrapper) { PyCall.wrap_ruby_collection(array) }
 
     it 'returns a Python Sequence that is not a list' do
       expect(helper.is_sequence(wrapper)).to eq(true)
       expect(helper.type_name(wrapper)).to eq('RubyArray')
-    end
-
-    it 'raises TypeError for a non-Array' do
-      expect { PyCall.wrap_ruby_array({}) }.to raise_error(TypeError, /expected Array/)
-      expect { PyCall.wrap_ruby_array(nil) }.to raise_error(TypeError, /expected Array/)
     end
 
     it 'supports len()' do
@@ -59,7 +75,7 @@ RSpec.describe PyCall do
       expect(helper.equals(wrapper, [1, 'x', 'y', [2, 3]])).to eq(true)
       expect(helper.equals(wrapper, [1, 'x', 'y'])).to eq(false)
       expect(helper.not_equals(wrapper, [1, 'x', 'y'])).to eq(true)
-      expect(helper.equals(wrapper, PyCall.wrap_ruby_array(array.dup))).to eq(true)
+      expect(helper.equals(wrapper, PyCall.wrap_ruby_collection(array.dup))).to eq(true)
     end
 
     it 'is unhashable like list' do
@@ -74,7 +90,7 @@ RSpec.describe PyCall do
     end
 
     it 'has repr()' do
-      expect(builtins.repr(PyCall.wrap_ruby_array([1, 'a']))).to eq("RubyArray([1, 'a'])")
+      expect(builtins.repr(PyCall.wrap_ruby_collection([1, 'a']))).to eq("RubyArray([1, 'a'])")
     end
 
     it 'gives back the original Array through ruby_object' do
@@ -82,17 +98,13 @@ RSpec.describe PyCall do
     end
   end
 
-  describe '.wrap_ruby_hash' do
+  describe '.wrap_ruby_collection with a Hash' do
     let(:hash) { { a: 1, 'b' => [2], 3 => nil } }
-    subject(:wrapper) { PyCall.wrap_ruby_hash(hash) }
+    subject(:wrapper) { PyCall.wrap_ruby_collection(hash) }
 
     it 'returns a Python Mapping that is not a dict' do
       expect(helper.is_mapping(wrapper)).to eq(true)
       expect(helper.type_name(wrapper)).to eq('RubyHash')
-    end
-
-    it 'raises TypeError for a non-Hash' do
-      expect { PyCall.wrap_ruby_hash([]) }.to raise_error(TypeError, /expected Hash/)
     end
 
     it 'supports len()' do
@@ -110,7 +122,7 @@ RSpec.describe PyCall do
     end
 
     it 'does not use the default value of the Hash' do
-      expect(helper.getitem(PyCall.wrap_ruby_hash(Hash.new(0)), 'z')).to eq('KeyError')
+      expect(helper.getitem(PyCall.wrap_ruby_collection(Hash.new(0)), 'z')).to eq('KeyError')
     end
 
     it 'supports `in`, get(), and dict()' do
@@ -122,7 +134,7 @@ RSpec.describe PyCall do
     end
 
     it 'can be unpacked as keyword arguments' do
-      kwargs = helper.keyword_args(PyCall.wrap_ruby_hash(x: 1, 'y' => 2))
+      kwargs = helper.keyword_args(PyCall.wrap_ruby_collection(x: 1, 'y' => 2))
       expect(kwargs).to eq(PyCall::Dict.new('x' => 1, 'y' => 2))
     end
 
@@ -147,17 +159,13 @@ RSpec.describe PyCall do
     end
   end
 
-  describe '.wrap_ruby_set' do
+  describe '.wrap_ruby_collection with a Set' do
     let(:set) { Set[1, 'x', :y] }
-    subject(:wrapper) { PyCall.wrap_ruby_set(set) }
+    subject(:wrapper) { PyCall.wrap_ruby_collection(set) }
 
     it 'returns a Python Set that is not a set' do
       expect(helper.is_set(wrapper)).to eq(true)
       expect(helper.type_name(wrapper)).to eq('RubySet')
-    end
-
-    it 'raises TypeError for a non-Set' do
-      expect { PyCall.wrap_ruby_set([1]) }.to raise_error(TypeError, /expected Set/)
     end
 
     it 'supports len() and iteration' do
