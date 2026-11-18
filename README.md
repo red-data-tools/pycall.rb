@@ -89,6 +89,26 @@ stats.norm(0, 10).pdf([1, 2, 3])  # stats.norm is called with the given argument
 
 To call such an object without arguments, write `obj.attr.()` (or `obj.attr.call`).
 
+### Passing an Array, a Hash, or a Set without converting it
+
+When an Array or a Hash is passed to Python, pycall.rb converts it to a Python `list` or `dict`, including all of its elements.  For a large collection that Python only partly reads, you can pass a read-only view instead, which converts each element only when Python accesses it:
+
+```ruby
+PyCall.wrap_as_python_collection(array)  # RubyArray, a collections.abc.Sequence
+PyCall.wrap_as_python_collection(hash)   # RubyHash, a collections.abc.Mapping
+PyCall.wrap_as_python_collection(set)    # RubySet, a collections.abc.Set
+```
+
+The view is selected by the type of the object, including subclasses of `Array`, `Hash`, and `Set`.  Any other object raises `TypeError`.
+
+The views reflect later changes of the Ruby object, and `view.ruby_object` gives back the original Ruby object.  They are not instances of `list`, `dict`, or `set`, so some Python code does not accept them; for example, `json.dumps` raises `TypeError`, and `pandas.DataFrame` treats a `Mapping` that is not a `dict` as a sequence of its keys.  Reading every element through a view is also slower than converting the whole collection once.  A Symbol key or element is seen as a `str` in Python, the same as in the default conversion.
+
+Iterating over a Hash or a Set view first copies its keys or elements into a Ruby Array, without converting them, and then converts each of them when the iteration reaches it.  Changes of the Ruby object after the iteration started are not seen by that iteration.
+
+Distinct Ruby keys or elements can be equal in Python, for example `"a"` and `:a`, or `1` and `1.0`.  Iterating over a view that has them raises `ValueError`, and so does looking up `"a"` while both `"a"` and `:a` are present.  `len()` still returns the number of Ruby keys or elements.
+
+When a method of the Ruby object raises an exception, such as an overridden method of a subclass, the view raises `RuntimeError` with the class and the message of the Ruby exception.
+
 ### Specifying the Python version
 
 If you want to use a specific version of Python instead of the default,
